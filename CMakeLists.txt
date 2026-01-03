@@ -5,5 +5,6 @@ set(CMAKE_C_STANDARD 11)
 
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 
-add_executable(main ${SRC_DIR}/main.c
-        src/main.c)
+add_executable(main
+        ${SRC_DIR}/main.c
+)
