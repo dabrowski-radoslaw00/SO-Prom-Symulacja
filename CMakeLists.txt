@@ -19,10 +19,12 @@ add_executable(test_logger
         ${SRC_DIR}/test_logger.c
         ${COMMON_SOURCES}
 )
+
 target_include_directories(test_logger PRIVATE ${SRC_DIR})
 
 add_executable(main
         ${SRC_DIR}/main.c
         ${COMMON_SOURCES}
 )
+
 target_include_directories(main PRIVATE ${SRC_DIR})

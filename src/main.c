@@ -1,74 +1,84 @@
 #include "utils/logger.h"
 #include "ipc/ipc.h"
-#include "common/shared_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 int main(void) {
-    printf("=== Ferry Ssimulation - testowaine ===\n\n");
+    printf("=== Ferry System - Main Launcher ===\n\n");
 
-    printf("1. Inicjalizacja loggere...\n");
+    // 1. Inicjalizacja loggera
+    printf("Initializing logger...\n");
     if (logger_init() == -1) {
-        fprintf(stderr, "Bład inicjalozacji\n");
+        fprintf(stderr, "Failed to initialize logger\n");
         return EXIT_FAILURE;
     }
-    log_message("Zainicjalizoano");
+    log_message("=== SYSTEM STARTUP ===");
+    log_message("Logger initialized");
 
-    printf("2. Initializing IPC (shared memory + semaphores)...\n");
+    // 2. Inicjalizacja IPC
+    printf("Initializing IPC...\n");
     if (ipc_init() == -1) {
         fprintf(stderr, "Failed to initialize IPC\n");
         log_message("ERROR: Failed to initialize IPC");
         logger_cleanup();
         return EXIT_FAILURE;
     }
+    log_message("IPC initialized (shared memory + semaphores)");
 
-    log_message("IPC zainicializoawało");
+    // 3. Fork + exec captain
+    printf("Starting port captain...\n");
+    log_message("Forking port captain process");
 
-    printf("3. Zbieranie SHM...\n");
+    pid_t captain_pid = fork();
 
-    SystemState *state = ipc_get_state();
-
-    if (state == NULL) {
-        fprintf(stderr, "Bład pobierania SHM\n");
-        log_message("ERROR: Bład pobierania SHM");
+    if (captain_pid == -1) {
+        perror("fork");
+        log_message("ERROR: Failed to fork captain process");
         ipc_cleanup();
         logger_cleanup();
         return EXIT_FAILURE;
     }
 
-    printf("4. testowanie lock/unlock...\n");
-    ipc_lock();
+    if (captain_pid == 0) {
+        // Proces potomny - uruchom captain
+        execl("./captain", "captain", NULL);
 
-    printf("  System działa: %s\n", state->system_running ? "TA" : "NIE");
-    log_message(state->system_running ? "System działą" : "System przetał działac");
-
-    ipc_unlock();
-
-    printf("5. syumlacjia 3 sek pracy...\n");
-    log_message("Pitu pitu...");
-    sleep(3);
-
-    printf("6. Smiana statusu systemu...\n");
-    ipc_lock();
-    state->system_running = false;
-    log_message("System sie zatrzymal");
-    ipc_unlock();
-
-
-    printf("7. Czyszczenie...\n");
-    log_message("Czyszczenie");
-
-    if (ipc_cleanup() == -1) {
-        fprintf(stderr, "blad czyszczenia IPC\n");
-        log_message("blad czyszczenia IPC");
-    } else {
-        log_message("IPC wyczyszczono ");
+        // Jeśli execl się nie powiódł
+        perror("execl captain");
+        exit(EXIT_FAILURE);
     }
 
+    // Proces rodzicielski - czeka na kapitana
+    log_message("Port captain process started");
+    printf("Port captain running (PID: %d)...\n", captain_pid);
+
+    int status;
+    waitpid(captain_pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        printf("Port captain finished with status: %d\n", WEXITSTATUS(status));
+        log_message("Port captain finished successfully");
+    } else {
+        log_message("WARNING: Port captain terminated abnormally");
+    }
+
+    // 4. Cleanup
+    printf("\nCleaning up...\n");
+    log_message("Starting system cleanup");
+
+    if (ipc_cleanup() == -1) {
+        fprintf(stderr, "Warning: IPC cleanup had errors\n");
+        log_message("WARNING: IPC cleanup had errors");
+    } else {
+        log_message("IPC cleaned up successfully");
+    }
+
+    log_message("=== SYSTEM SHUTDOWN ===");
     logger_cleanup();
 
-    printf("\n=== Koniec testu ===\n");
+    printf("\n=== System finished ===\n");
 
     return EXIT_SUCCESS;
 }
