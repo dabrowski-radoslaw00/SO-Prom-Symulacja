@@ -7,12 +7,22 @@ set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 set(COMMON_SOURCES
         ${SRC_DIR}/ipc/ipc.c
         ${SRC_DIR}/utils/logger.c
-        src/test_logger.c
 )
 
 add_executable(captain
         ${SRC_DIR}/modules/captain/captain.c
         ${COMMON_SOURCES}
 )
-
 target_include_directories(captain PRIVATE ${SRC_DIR})
+
+add_executable(test_logger
+        ${SRC_DIR}/test_logger.c
+        ${COMMON_SOURCES}
+)
+target_include_directories(test_logger PRIVATE ${SRC_DIR})
+
+add_executable(main
+        ${SRC_DIR}/main.c
+        ${COMMON_SOURCES}
+)
+target_include_directories(main PRIVATE ${SRC_DIR})
