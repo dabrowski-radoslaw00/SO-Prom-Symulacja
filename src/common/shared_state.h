@@ -3,12 +3,8 @@
 
 #include <stdbool.h>
 
-/* ========================================
- * MINIMALNY STAN SYSTEMU
- * ======================================== */
-
 typedef struct {
-    bool system_running;            // Czy system działa
+    bool system_running;
 } SystemState;
 
-#endif /* SHARED_STATE_H */
+#endif

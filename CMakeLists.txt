@@ -5,6 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 
 set(COMMON_SOURCES
+        ${SRC_DIR}/ipc/ipc.c
         ${SRC_DIR}/utils/logger.c
         src/test_logger.c
 )
