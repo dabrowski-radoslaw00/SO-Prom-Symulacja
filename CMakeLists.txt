@@ -9,11 +9,23 @@ set(COMMON_SOURCES
         ${SRC_DIR}/utils/logger.c
 )
 
+add_executable(main
+        ${SRC_DIR}/main.c
+        ${COMMON_SOURCES}
+)
+target_include_directories(main PRIVATE ${SRC_DIR})
+
 add_executable(captain
         ${SRC_DIR}/modules/captain/captain.c
         ${COMMON_SOURCES}
 )
 target_include_directories(captain PRIVATE ${SRC_DIR})
+
+add_executable(passenger
+        ${SRC_DIR}/modules/passenger/passenger.c
+        ${COMMON_SOURCES}
+)
+target_include_directories(passenger PRIVATE ${SRC_DIR})
 
 add_executable(test_logger
         ${SRC_DIR}/test_logger.c
@@ -21,10 +33,3 @@ add_executable(test_logger
 )
 
 target_include_directories(test_logger PRIVATE ${SRC_DIR})
-
-add_executable(main
-        ${SRC_DIR}/main.c
-        ${COMMON_SOURCES}
-)
-
-target_include_directories(main PRIVATE ${SRC_DIR})

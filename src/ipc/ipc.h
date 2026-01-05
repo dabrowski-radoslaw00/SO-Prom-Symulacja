@@ -11,4 +11,7 @@ void ipc_lock(void);
 void ipc_unlock(void);
 int ipc_cleanup(void);
 
+int ipc_register_passenger(pid_t pid);
+void ipc_unregister_passenger(int passenger_id);
+
 #endif

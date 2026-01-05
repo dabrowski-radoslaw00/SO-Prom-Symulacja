@@ -113,3 +113,44 @@ int ipc_cleanup(void) {
     
     return ret;
 }
+
+
+
+int ipc_register_passenger(pid_t pid) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    int passenger_id = -1;
+    for (int i = 0; i < MAX_PASSENGERS; i++) {
+        if (!state->passengers[i].active) {
+            passenger_id = i;
+            state->passengers[i].id = i;
+            state->passengers[i].pid = pid;
+            state->passengers[i].active = true;
+            state->total_passengers++;
+            break;
+        }
+    }
+
+    ipc_unlock();
+
+    return passenger_id;
+}
+
+void ipc_unregister_passenger(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return;
+    }
+
+    ipc_lock();
+
+    if (state->passengers[passenger_id].active) {
+        state->passengers[passenger_id].active = false;
+        state->total_passengers--;
+    }
+
+    ipc_unlock();
+}
