@@ -1,4 +1,4 @@
-#include "utils/logger.h"
+#include "utils/logger/logger.h"
 
 int main() {
     logger_init();

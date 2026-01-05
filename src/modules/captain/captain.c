@@ -1,11 +1,9 @@
-#include "utils/logger.h"
 #include "ipc/ipc.h"
 #include "common/shared_state.h"
 #include "common/config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
 

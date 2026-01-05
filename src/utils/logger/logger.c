@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <string.h>
 
 static FILE *log_file = NULL;

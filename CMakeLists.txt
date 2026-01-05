@@ -2,17 +2,21 @@ cmake_minimum_required(VERSION 3.18.4)
 project(so_ferry_simulation C)
 
 set(CMAKE_C_STANDARD 11)
+
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
+set(SRC_UTILS ${SRC_DIR}/utils)
 
 set(COMMON_SOURCES
         ${SRC_DIR}/ipc/ipc.c
-        ${SRC_DIR}/utils/logger.c
+        ${SRC_UTILS}/logger/logger.c
+        ${SRC_UTILS}/passenger/random_passenger.c
 )
 
 add_executable(main
         ${SRC_DIR}/main.c
         ${COMMON_SOURCES}
 )
+
 target_include_directories(main PRIVATE ${SRC_DIR})
 
 add_executable(captain
