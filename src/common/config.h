@@ -16,4 +16,25 @@
 /* === PRAWA DOSTĘPU === */
 #define IPC_PERMS 0600              // rw------- (minimalne prawa)
 
-#endif /* CONFIG_H */
+/* === PARAMETRY PASAŻERÓW === */
+#define MAX_LUGGAGE_WEIGHT 23       // Mp - Maksymalny ciężar bagażu (kg)
+
+/* Płeć */
+typedef enum {
+ MALE = 0,
+ FEMALE = 1
+} Gender;
+
+/* Typ pasażera */
+typedef enum {
+ REGULAR = 0,
+ VIP = 1
+} PassengerType;
+
+/* Status pasażera */
+typedef enum {
+ STATUS_WAITING = 0,         // Czeka w systemie
+ STATUS_COMPLETED = 1        // Zakończył podróż
+} PassengerStatus;
+
+#endif

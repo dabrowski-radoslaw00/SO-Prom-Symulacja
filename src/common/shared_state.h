@@ -1,6 +1,7 @@
 #ifndef SHARED_STATE_H
 #define SHARED_STATE_H
 
+#include "config.h"
 #include <stdbool.h>
 #include <sys/types.h>
 
@@ -10,6 +11,10 @@ typedef struct {
     int id;
     pid_t pid;
     bool active;
+    Gender gender;
+    int luggage_weight;
+    PassengerType type;
+    PassengerStatus status;
 } PassengerInfo;
 
 typedef struct {
