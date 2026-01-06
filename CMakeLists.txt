@@ -31,6 +31,13 @@ add_executable(passenger
 )
 target_include_directories(passenger PRIVATE ${SRC_DIR})
 
+add_executable(ferry
+        ${SRC_DIR}/modules/ferry/ferry.c
+        ${COMMON_SOURCES}
+)
+target_include_directories(ferry PRIVATE ${SRC_DIR})
+
+
 add_executable(test_logger
         ${SRC_DIR}/test_logger.c
         ${COMMON_SOURCES}

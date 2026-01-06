@@ -5,7 +5,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-#define NUM_PASSENGERS 5
+#define NUM_PASSENGERS 5    
+#define NUM_FERRIES 2       
 
 int main(void) {
     printf("=== Ferry System - Main Launcher ===\n\n");
@@ -26,7 +27,7 @@ int main(void) {
         return EXIT_FAILURE;
     }
     log_message("IPC initialized (shared memory + semaphores)");
-
+    
     printf("Starting port captain...\n");
     log_message("Forking port captain process");
 
@@ -41,6 +42,7 @@ int main(void) {
     }
 
     if (captain_pid == 0) {
+        
         execl("./captain", "captain", NULL);
         perror("execl captain");
         exit(EXIT_FAILURE);
@@ -48,11 +50,46 @@ int main(void) {
 
     log_message("Port captain process started");
     printf("Port captain running (PID: %d)\n\n", captain_pid);
+    
+    sleep(1);
+
+    printf("Creating %d ferries...\n", NUM_FERRIES);
+    char log_msg[128];
+    snprintf(log_msg, sizeof(log_msg), "Creating %d ferry processes", NUM_FERRIES);
+    log_message(log_msg);
+
+    pid_t ferry_pids[NUM_FERRIES];
+
+    for (int i = 0; i < NUM_FERRIES; i++) {
+        ferry_pids[i] = fork();
+
+        if (ferry_pids[i] == -1) {
+            perror("fork ferry");
+            snprintf(log_msg, sizeof(log_msg), "ERROR: Failed to fork ferry %d", i);
+            log_message(log_msg);
+            continue;
+        }
+
+        if (ferry_pids[i] == 0) {
+            
+            execl("./ferry", "ferry", NULL);
+            perror("execl ferry");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("  Ferry %d started (PID: %d)\n", i+1, ferry_pids[i]);
+
+        
+        usleep(200000);  
+    }
+
+    log_message("All ferry processes created");
+    printf("\n");
 
     sleep(1);
 
     printf("Creating %d passengers...\n", NUM_PASSENGERS);
-    char log_msg[128];
+
     snprintf(log_msg, sizeof(log_msg), "Creating %d passenger processes", NUM_PASSENGERS);
     log_message(log_msg);
 
@@ -69,19 +106,19 @@ int main(void) {
         }
 
         if (passenger_pids[i] == 0) {
+            
             execl("./passenger", "passenger", NULL);
             perror("execl passenger");
             exit(EXIT_FAILURE);
         }
 
         printf("  Passenger %d started (PID: %d)\n", i+1, passenger_pids[i]);
-
-        usleep(100000);
+        usleep(100000);  
     }
 
     log_message("All passenger processes created");
     printf("\nAll processes running...\n\n");
-
+    
     printf("Waiting for passengers to finish...\n");
     for (int i = 0; i < NUM_PASSENGERS; i++) {
         if (passenger_pids[i] > 0) {
@@ -93,6 +130,18 @@ int main(void) {
         }
     }
     log_message("All passengers finished");
+    
+    printf("\nWaiting for ferries to finish...\n");
+    for (int i = 0; i < NUM_FERRIES; i++) {
+        if (ferry_pids[i] > 0) {
+            int status;
+            waitpid(ferry_pids[i], &status, 0);
+            if (WIFEXITED(status)) {
+                printf("  Ferry (PID: %d) finished\n", ferry_pids[i]);
+            }
+        }
+    }
+    log_message("All ferries finished");
 
     printf("\nWaiting for captain to finish...\n");
     int status;
