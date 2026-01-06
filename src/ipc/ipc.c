@@ -5,7 +5,6 @@
 #include <sys/sem.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 
 union semun {

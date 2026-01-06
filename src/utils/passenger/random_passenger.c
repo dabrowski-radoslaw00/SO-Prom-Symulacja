@@ -8,7 +8,7 @@ static bool initialized = false;
 
 static void ensure_initialized(void) {
     if (!initialized) {
-        unsigned int seed = (unsigned int)(time(NULL) ^ getpid());
+        unsigned int seed = (time(NULL) ^ getpid());
         srand(seed);
         initialized = true;
     }
