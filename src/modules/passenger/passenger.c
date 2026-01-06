@@ -1,6 +1,8 @@
 #include "common/config.h"
 #include "common/shared_state.h"
 #include "utils/passenger/random_passenger.h"
+#include "utils/logger/logger.h"
+#include "utils/logger/colors.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -35,7 +37,7 @@ static void unlock_mutex(void) {
     }
 }
 
-static int register_passenger(void) {
+static int register_passenger(Gender gender, int luggage_weight, PassengerType type) {
     lock_mutex();
 
     int passenger_id = -1;
@@ -45,6 +47,7 @@ static int register_passenger(void) {
             state->passengers[i].id = i;
             state->passengers[i].pid = getpid();
             state->passengers[i].active = true;
+
             state->passengers[i].gender = gender;
             state->passengers[i].luggage_weight = luggage_weight;
             state->passengers[i].type = type;
@@ -81,10 +84,15 @@ int main(void) {
     PassengerAttributes attr = random_passenger_attributes();
 
     const char *gender_str = (attr.gender == MALE) ? "MALE" : "FEMALE";
+    const char *gender_color = (attr.gender == MALE) ? C_MALE : C_FEMALE;
     const char *type_str = (attr.type == VIP) ? "VIP" : "REGULAR";
+    const char *type_color = (attr.type == VIP) ? C_VIP : COLOR_WHITE;
 
-    printf("[PASSENGER-%d] Starting... [%s, %dkg, %s]\n",
-           my_pid, gender_str, attr.luggage_weight, type_str);
+    printf("%s[PASSENGER-%d]%s Starting... [%s%s%s, %s%dkg%s, %s%s%s]\n",
+           C_INFO, my_pid, COLOR_RESET,
+           gender_color, gender_str, COLOR_RESET,
+           COLOR_YELLOW, attr.luggage_weight, COLOR_RESET,
+           type_color, type_str, COLOR_RESET);
 
     shm_id = shmget(SHM_KEY, sizeof(SystemState), IPC_PERMS);
     if (shm_id == -1) {
@@ -107,36 +115,47 @@ int main(void) {
 
     int my_id = register_passenger(attr.gender, attr.luggage_weight, attr.type);
     if (my_id == -1) {
-        printf("[PASSENGER-%d] ERROR: No space available\n", my_pid);
+        printf("%s[PASSENGER-%d]%s ERROR: No space available\n",
+               C_ERROR, my_pid, COLOR_RESET);
         shmdt(state);
         return EXIT_FAILURE;
     }
 
-    printf("[PASSENGER-%d] Registered with ID: %d\n", my_pid, my_id);
+    printf("%s[PASSENGER-%d]%s Registered with ID: %s%d%s\n",
+           C_INFO, my_pid, COLOR_RESET,
+           STYLE_BOLD, my_id, COLOR_RESET);
+
+    log_passenger_registered(my_id, my_pid, attr.gender,
+                             attr.luggage_weight, attr.type);
 
     if (attr.luggage_weight > MAX_LUGGAGE_WEIGHT) {
-        printf("[PASSENGER-%d] ❌ Luggage too heavy (%dkg > %dkg) - REJECTED\n",
-               my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT);
-        printf("[PASSENGER-%d] Returning to check-in hall...\n", my_pid);
+        printf("%s[PASSENGER-%d] ❌ Luggage too heavy (%dkg > %dkg) - REJECTED%s\n",
+               C_ERROR, my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT, COLOR_RESET);
+        printf("%s[PASSENGER-%d]%s Returning to check-in hall...\n",
+               C_WARNING, my_pid, COLOR_RESET);
+
+        log_passenger_rejected(my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT);
+
         sleep(1);
         unregister_passenger(my_id);
         shmdt(state);
         return EXIT_SUCCESS;
     } else {
-        printf("[PASSENGER-%d] ✓ Luggage OK (%dkg <= %dkg)\n",
-               my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT);
+        printf("%s[PASSENGER-%d] ✓ Luggage OK (%dkg <= %dkg)%s\n",
+               C_SUCCESS, my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT, COLOR_RESET);
     }
 
-    printf("[PASSENGER-%d] Waiting in hall...\n", my_pid);
+    printf("%s[PASSENGER-%d]%s Waiting in hall...\n", C_INFO, my_pid, COLOR_RESET);
     sleep(2);
 
-    printf("[PASSENGER-%d] Going through check-in...\n", my_pid);
+    printf("%s[PASSENGER-%d]%s Going through check-in...\n", C_INFO, my_pid, COLOR_RESET);
     sleep(1);
 
-    printf("[PASSENGER-%d] Journey completed\n", my_pid);
+    printf("%s[PASSENGER-%d] ✓ Journey completed%s\n", C_SUCCESS, my_pid, COLOR_RESET);
 
     unregister_passenger(my_id);
-    printf("[PASSENGER-%d] Unregistered\n", my_pid);
+    log_passenger_completed(my_id, my_pid);
+    printf("%s[PASSENGER-%d]%s Unregistered\n", STYLE_DIM, my_pid, COLOR_RESET);
 
     if (shmdt(state) == -1) {
         perror("[PASSENGER] shmdt");
