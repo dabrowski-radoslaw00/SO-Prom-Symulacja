@@ -59,19 +59,28 @@ int main(void) {
     printf("%s[PASSENGER-%d]%s Going through check-in...\n", C_INFO, my_pid, COLOR_RESET);
     sleep(1);
 
-    printf("%s[PASSENGER-%d]%s Looking for available ferry...\n", C_INFO, my_pid, COLOR_RESET);
+    printf("%s[PASSENGER-%d]%s Looking for available ferry...%s\n",
+           C_INFO, my_pid, COLOR_RESET,
+           (attr.type == VIP) ? " [VIP PRIORITY]" : "");
 
     int ferry_id = -1;
     int attempts = 0;
     const int MAX_ATTEMPTS = 10;
 
+    const int SEARCH_DELAY = (attr.type == VIP) ? 500000 : 1000000;
+
     while (ferry_id == -1 && attempts < MAX_ATTEMPTS) {
         ferry_id = ipc_find_available_ferry(attr.luggage_weight);
 
         if (ferry_id == -1) {
-            printf("%s[PASSENGER-%d]%s No ferry available, waiting... (attempt %d/%d)\n",
-                   C_WARNING, my_pid, COLOR_RESET, attempts + 1, MAX_ATTEMPTS);
-            sleep(1);
+            if (attr.type == VIP) {
+                printf("%s[PASSENGER-%d] 👑 VIP waiting for ferry... (attempt %d/%d)%s\n",
+                       C_VIP, my_pid, attempts + 1, MAX_ATTEMPTS, COLOR_RESET);
+            } else {
+                printf("%s[PASSENGER-%d]%s No ferry available, waiting... (attempt %d/%d)\n",
+                       C_WARNING, my_pid, COLOR_RESET, attempts + 1, MAX_ATTEMPTS);
+            }
+            usleep(SEARCH_DELAY);
             attempts++;
         }
     }
@@ -83,11 +92,13 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    printf("%s[PASSENGER-%d]%s Found Ferry #%d!\n",
-           C_SUCCESS, my_pid, COLOR_RESET, ferry_id);
+    printf("%s[PASSENGER-%d]%s Found Ferry #%d!%s\n",
+           C_SUCCESS, my_pid, COLOR_RESET, ferry_id,
+           (attr.type == VIP) ? " 👑" : "");
 
-    printf("%s[PASSENGER-%d]%s Boarding Ferry #%d...\n",
-           C_INFO, my_pid, COLOR_RESET, ferry_id);
+    printf("%s[PASSENGER-%d]%s Boarding Ferry #%d...%s\n",
+           C_INFO, my_pid, COLOR_RESET, ferry_id,
+           (attr.type == VIP) ? " [VIP]" : "");
 
     if (ipc_board_ferry(ferry_id, my_id) == -1) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to board Ferry #%d\n",
