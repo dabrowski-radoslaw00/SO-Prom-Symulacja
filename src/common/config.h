@@ -24,6 +24,11 @@
 #define FERRY_TRIP_TIME 10          // Ti - Czas rejsu (sekundy)
 #define GANGWAY_CAPACITY 5          // K - Pojemność trapu
 
+#define NUM_SECURITY_STATIONS 3     // Liczba stanowisk kontroli
+#define MAX_PEOPLE_PER_STATION 2    // Max osób na stanowisku
+#define MAX_QUEUE_PASSES 3
+#define SECURITY_CHECK_TIME 2       // Czas kontroli bezpieczeństwa (sekundy)
+
 /* Płeć */
 typedef enum {
  MALE = 0,
@@ -38,9 +43,13 @@ typedef enum {
 
 /* Status pasażera */
 typedef enum {
- STATUS_WAITING = 0,         // Czeka w systemie
- STATUS_ON_FERRY = 1,        // Na promie
- STATUS_COMPLETED = 2        // Zakończył podróż
+ STATUS_WAITING = 0,              // Czeka w systemie
+ STATUS_IN_QUEUE = 1,             // W kolejce do kontroli
+ STATUS_AT_SECURITY = 2,          // Na stanowisku kontroli
+ STATUS_SECURITY_PASSED = 3,      // Przeszedł kontrolę
+ STATUS_IN_WAITING_ROOM = 4,      // W poczekalni
+ STATUS_ON_FERRY = 5,             // Na promie
+ STATUS_COMPLETED = 6             // Zakończył podróż
 } PassengerStatus;
 
 /* Status promu */
@@ -50,5 +59,7 @@ typedef enum {
  FERRY_SAILING = 2,          // W trakcie rejsu
  FERRY_RETURNING = 3         // Wraca do portu
 } FerryStatus;
+
+
 
 #endif

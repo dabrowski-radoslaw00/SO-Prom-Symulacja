@@ -36,6 +36,23 @@ int ipc_init(void) {
     memset(state, 0, sizeof(SystemState));
     state->system_running = true;
 
+    for (int i = 0; i < NUM_SECURITY_STATIONS; i++) {
+        state->security_stations[i].id = i;
+        state->security_stations[i].num_people = 0;
+        state->security_stations[i].station_gender = MALE;
+        state->security_stations[i].in_use = false;
+        for (int j = 0; j < MAX_PEOPLE_PER_STATION; j++) {
+            state->security_stations[i].passenger_ids[j] = -1;
+        }
+    }
+
+    state->security_queue_size = 0;
+    state->security_queue_head = 0;
+    state->security_queue_tail = 0;
+    for (int i = 0; i < MAX_SECURITY_QUEUE; i++) {
+        state->security_queue[i] = -1;
+    }
+
     sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_CREAT | IPC_EXCL | IPC_PERMS);
     if (sem_id == -1) {
         perror("semget");
@@ -129,6 +146,10 @@ int ipc_register_passenger(pid_t pid, Gender gender, int luggage_weight, Passeng
             state->passengers[i].type = type;
             state->passengers[i].status = STATUS_WAITING;
             state->passengers[i].ferry_id = -1;
+            state->passengers[i].security_station_id = -1;
+            state->passengers[i].queue_position = -1;
+            state->passengers[i].times_passed = 0;
+            state->passengers[i].in_security_queue = false;
             state->total_passengers++;
             break;
         }
@@ -315,4 +336,336 @@ int ipc_get_ferry_max_luggage(int ferry_id) {
     ipc_unlock();
 
     return max_luggage;
+}
+
+int ipc_join_security_queue(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    if (state->passengers[passenger_id].in_security_queue) {
+        ipc_unlock();
+        return -1;
+    }
+
+    if (state->security_queue_size >= MAX_SECURITY_QUEUE) {
+        ipc_unlock();
+        return -2;
+    }
+
+
+    int tail = state->security_queue_tail;
+    state->security_queue[tail] = passenger_id;
+    state->security_queue_tail = (tail + 1) % MAX_SECURITY_QUEUE;
+    state->security_queue_size++;
+
+    state->passengers[passenger_id].in_security_queue = true;
+    state->passengers[passenger_id].queue_position = state->security_queue_size - 1;
+    state->passengers[passenger_id].status = STATUS_IN_QUEUE;
+
+    int position = state->passengers[passenger_id].queue_position;
+
+    ipc_unlock();
+
+    return position;
+}
+
+void ipc_leave_security_queue(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return;
+    }
+
+    ipc_lock();
+
+    if (!state->passengers[passenger_id].in_security_queue) {
+        ipc_unlock();
+        return;
+    }
+
+    int found_index = -1;
+    for (int i = 0; i < state->security_queue_size; i++) {
+        int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+        if (state->security_queue[idx] == passenger_id) {
+            found_index = idx;
+            break;
+        }
+    }
+
+    if (found_index != -1) {
+
+        int queue_pos = 0;
+        for (int i = 0; i < state->security_queue_size; i++) {
+            int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+            if (idx == found_index) {
+                continue;
+            }
+            int new_idx = (state->security_queue_head + queue_pos) % MAX_SECURITY_QUEUE;
+            state->security_queue[new_idx] = state->security_queue[idx];
+            queue_pos++;
+        }
+
+        state->security_queue_size--;
+        state->security_queue_tail = (state->security_queue_tail - 1 + MAX_SECURITY_QUEUE) % MAX_SECURITY_QUEUE;
+
+
+        for (int i = 0; i < state->security_queue_size; i++) {
+            int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+            int pid = state->security_queue[idx];
+            if (pid >= 0 && pid < MAX_PASSENGERS) {
+                state->passengers[pid].queue_position = i;
+            }
+        }
+    }
+
+    state->passengers[passenger_id].in_security_queue = false;
+    state->passengers[passenger_id].queue_position = -1;
+
+    ipc_unlock();
+}
+
+int ipc_get_queue_position(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    int position = -1;
+    if (state->passengers[passenger_id].in_security_queue) {
+        position = state->passengers[passenger_id].queue_position;
+    }
+
+    ipc_unlock();
+
+    return position;
+}
+
+int ipc_get_queue_size(void) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    ipc_lock();
+    int size = state->security_queue_size;
+    ipc_unlock();
+
+    return size;
+}
+
+int ipc_get_available_station_for_gender(Gender gender) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    int station_id = -1;
+
+    for (int i = 0; i < NUM_SECURITY_STATIONS; i++) {
+        if (state->security_stations[i].station_gender == gender &&
+            state->security_stations[i].num_people < MAX_PEOPLE_PER_STATION) {
+            station_id = i;
+            break;
+        }
+    }
+
+    if (station_id == -1) {
+        for (int i = 0; i < NUM_SECURITY_STATIONS; i++) {
+            if (state->security_stations[i].num_people == 0) {
+                station_id = i;
+                break;
+            }
+        }
+    }
+
+    ipc_unlock();
+
+    return station_id;
+}
+
+int ipc_assign_to_security_station(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+
+    if (!state->passengers[passenger_id].in_security_queue) {
+        ipc_unlock();
+        return -1;
+    }
+
+    if (state->passengers[passenger_id].security_station_id >= 0) {
+        ipc_unlock();
+        return -2;
+    }
+
+    Gender passenger_gender = state->passengers[passenger_id].gender;
+    int station_id = -1;
+
+    for (int i = 0; i < NUM_SECURITY_STATIONS; i++) {
+        SecurityStation *station = &state->security_stations[i];
+
+        if (station->num_people == 0) {
+            station_id = i;
+            break;
+        } else if (station->station_gender == passenger_gender &&
+                   station->num_people < MAX_PEOPLE_PER_STATION) {
+            station_id = i;
+            break;
+        }
+    }
+
+    if (station_id == -1) {
+        ipc_unlock();
+        return -3;
+    }
+
+    SecurityStation *station = &state->security_stations[station_id];
+
+    if (station->num_people == 0) {
+        station->station_gender = passenger_gender;
+        station->in_use = true;
+    }
+
+    int slot = station->num_people;
+    station->passenger_ids[slot] = passenger_id;
+    station->num_people++;
+
+    state->passengers[passenger_id].security_station_id = station_id;
+    state->passengers[passenger_id].status = STATUS_AT_SECURITY;
+
+    if (state->passengers[passenger_id].in_security_queue) {
+        int found_index = -1;
+        for (int i = 0; i < state->security_queue_size; i++) {
+            int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+            if (state->security_queue[idx] == passenger_id) {
+                found_index = idx;
+                break;
+            }
+        }
+
+        if (found_index != -1) {
+
+            int queue_pos = 0;
+            for (int i = 0; i < state->security_queue_size; i++) {
+                int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+                if (idx == found_index) {
+                    continue;
+                }
+                int new_idx = (state->security_queue_head + queue_pos) % MAX_SECURITY_QUEUE;
+                state->security_queue[new_idx] = state->security_queue[idx];
+                queue_pos++;
+            }
+
+            state->security_queue_size--;
+            state->security_queue_tail = (state->security_queue_tail - 1 + MAX_SECURITY_QUEUE) % MAX_SECURITY_QUEUE;
+
+            for (int i = 0; i < state->security_queue_size; i++) {
+                int idx = (state->security_queue_head + i) % MAX_SECURITY_QUEUE;
+                int pid = state->security_queue[idx];
+                if (pid >= 0 && pid < MAX_PASSENGERS) {
+                    state->passengers[pid].queue_position = i;
+                }
+            }
+        }
+
+        state->passengers[passenger_id].in_security_queue = false;
+        state->passengers[passenger_id].queue_position = -1;
+    }
+
+    ipc_unlock();
+
+    return station_id;
+}
+
+void ipc_leave_security_station(int passenger_id, int station_id) {
+    if (state == NULL ||
+        passenger_id < 0 || passenger_id >= MAX_PASSENGERS ||
+        station_id < 0 || station_id >= NUM_SECURITY_STATIONS) {
+        return;
+    }
+
+    ipc_lock();
+
+    SecurityStation *station = &state->security_stations[station_id];
+
+    int found_slot = -1;
+    for (int i = 0; i < station->num_people; i++) {
+        if (station->passenger_ids[i] == passenger_id) {
+            found_slot = i;
+            break;
+        }
+    }
+
+    if (found_slot != -1) {
+        for (int i = found_slot; i < station->num_people - 1; i++) {
+            station->passenger_ids[i] = station->passenger_ids[i + 1];
+        }
+        station->num_people--;
+        station->passenger_ids[station->num_people] = -1;
+
+        if (station->num_people == 0) {
+            station->in_use = false;
+            station->station_gender = MALE;
+        }
+    }
+
+
+    state->passengers[passenger_id].security_station_id = -1;
+
+    ipc_unlock();
+}
+
+int ipc_complete_security_check(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    if (state->passengers[passenger_id].security_station_id < 0) {
+        ipc_unlock();
+        return -1;
+    }
+
+    if (state->passengers[passenger_id].status != STATUS_AT_SECURITY) {
+        ipc_unlock();
+        return -2;
+    }
+
+    int station_id = state->passengers[passenger_id].security_station_id;
+
+    SecurityStation *station = &state->security_stations[station_id];
+    int found_slot = -1;
+    for (int i = 0; i < station->num_people; i++) {
+        if (station->passenger_ids[i] == passenger_id) {
+            found_slot = i;
+            break;
+        }
+    }
+
+    if (found_slot != -1) {
+        for (int i = found_slot; i < station->num_people - 1; i++) {
+            station->passenger_ids[i] = station->passenger_ids[i + 1];
+        }
+        station->num_people--;
+        station->passenger_ids[station->num_people] = -1;
+
+
+        if (station->num_people == 0) {
+            station->in_use = false;
+            station->station_gender = MALE;
+        }
+    }
+
+    state->passengers[passenger_id].security_station_id = -1;
+    state->passengers[passenger_id].status = STATUS_SECURITY_PASSED;
+
+    ipc_unlock();
+
+    return 0;
 }
