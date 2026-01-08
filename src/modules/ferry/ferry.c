@@ -103,12 +103,14 @@ int main(void) {
     shm_id = shmget(SHM_KEY, sizeof(SystemState), IPC_PERMS);
     if (shm_id == -1) {
         perror("[FERRY] shmget");
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
     state = (SystemState*)shmat(shm_id, NULL, 0);
     if (state == (void*)-1) {
         perror("[FERRY] shmat");
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -116,6 +118,7 @@ int main(void) {
     if (sem_id == -1) {
         perror("[FERRY] semget");
         shmdt(state);
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -124,6 +127,7 @@ int main(void) {
         printf("%s[FERRY-%d]%s ERROR: No space for ferry\n",
                C_ERROR, my_pid, COLOR_RESET);
         shmdt(state);
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -182,8 +186,10 @@ int main(void) {
             PassengerInfo *p = &state->passengers[pass_id];
             const char *gender_str = (p->gender == MALE) ? "M" : "F";
             const char *type_str = (p->type == VIP) ? "VIP" : "REG";
-            printf("  - Passenger #%d [%s, %dkg, %s]\n",
-                   pass_id, gender_str, p->luggage_weight, type_str);
+
+            printf("  - Passenger #%d [%s, %dkg/%dkg, %s]\n",
+         pass_id, gender_str, p->luggage_weight,
+         state->ferries[my_id].max_luggage_weight, type_str);
         }
     }
     unlock_mutex();
@@ -225,5 +231,7 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
+
+    logger_cleanup();
     return EXIT_SUCCESS;
 }

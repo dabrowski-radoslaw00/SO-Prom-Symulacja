@@ -11,9 +11,7 @@
 int main(void) {
     pid_t my_pid = getpid();
 
-    // Initialize logger for this passenger process
     if (logger_init() == -1) {
-        // Non-fatal: continue without file logging, but warn
         fprintf(stderr, "[PASSENGER-%d] Warning: Logger initialization failed\n", my_pid);
     }
 
@@ -69,6 +67,87 @@ int main(void) {
     printf("%s[PASSENGER-%d]%s Going through check-in...\n", C_INFO, my_pid, COLOR_RESET);
     sleep(1);
 
+
+ printf("%s[PASSENGER-%d]%s Joining security control queue...%s\n",
+           C_INFO, my_pid, COLOR_RESET,
+           (attr.type == VIP) ? " [VIP PRIORITY]" : "");
+
+    int queue_pos = ipc_join_security_queue(my_id);
+    if (queue_pos < 0) {
+        printf("%s[PASSENGER-%d]%s ERROR: Failed to join security queue\n",
+               C_ERROR, my_pid, COLOR_RESET);
+        ipc_unregister_passenger(my_id);
+        logger_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    printf("%s[PASSENGER-%d]%s In security queue, position: %d\n",
+           C_INFO, my_pid, COLOR_RESET, queue_pos);
+
+    int station_id = -1;
+    int assignment_attempts = 0;
+    const int MAX_ASSIGNMENT_ATTEMPTS = 20;
+
+    printf("%s[PASSENGER-%d]%s Waiting for security station assignment...\n",
+           C_INFO, my_pid, COLOR_RESET);
+
+    while (station_id < 0 && assignment_attempts < MAX_ASSIGNMENT_ATTEMPTS) {
+        station_id = ipc_assign_to_security_station(my_id);
+
+        if (station_id < 0) {
+            int current_queue_pos = ipc_get_queue_position(my_id);
+            if (current_queue_pos < 0) {
+                ipc_lock();
+                SystemState *state = ipc_get_state();
+                if (state->passengers[my_id].security_station_id >= 0) {
+                    station_id = state->passengers[my_id].security_station_id;
+                    ipc_unlock();
+                    break;
+                }
+                ipc_unlock();
+            }
+
+            usleep(500000);
+            assignment_attempts++;
+        }
+    }
+
+    if (station_id < 0) {
+        printf("%s[PASSENGER-%d]%s ERROR: Failed to get security station assignment\n",
+               C_ERROR, my_pid, COLOR_RESET);
+        ipc_unregister_passenger(my_id);
+        logger_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    printf("%s[PASSENGER-%d]%s Assigned to security station #%d\n",
+           C_INFO, my_pid, COLOR_RESET, station_id);
+
+    // Go through security check (simulate time)
+    printf("%s[PASSENGER-%d]%s Going through security check...\n",
+           C_INFO, my_pid, COLOR_RESET);
+
+    #ifdef SECURITY_CHECK_TIME
+        sleep(SECURITY_CHECK_TIME);
+    #else
+        sleep(2);
+    #endif
+
+
+    if (ipc_complete_security_check(my_id) != 0) {
+        printf("%s[PASSENGER-%d]%s ERROR: Failed to complete security check\n",
+               C_ERROR, my_pid, COLOR_RESET);
+        ipc_unregister_passenger(my_id);
+        logger_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    printf("%s[PASSENGER-%d] ✓ Security check passed%s\n",
+           C_SUCCESS, my_pid, COLOR_RESET);
+
+    printf("%s[PASSENGER-%d]%s In waiting room, ready to board...\n",
+           C_INFO, my_pid, COLOR_RESET);
+
     printf("%s[PASSENGER-%d]%s Looking for available ferry...%s\n",
            C_INFO, my_pid, COLOR_RESET,
            (attr.type == VIP) ? " [VIP PRIORITY]" : "");
@@ -99,7 +178,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: No ferry found after %d attempts\n",
                C_ERROR, my_pid, COLOR_RESET, MAX_ATTEMPTS);
         ipc_unregister_passenger(my_id);
-
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
