@@ -4,6 +4,8 @@ project(so_ferry_simulation C)
 set(CMAKE_C_STANDARD 11)
 
 set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
+
+set(TEST_DIR ${SRC_DIR}/test)
 set(SRC_UTILS ${SRC_DIR}/utils)
 
 set(COMMON_SOURCES
@@ -39,8 +41,22 @@ target_include_directories(ferry PRIVATE ${SRC_DIR})
 
 
 add_executable(test_logger
-        ${SRC_DIR}/test_logger.c
+        ${TEST_DIR}/test_logger.c
         ${COMMON_SOURCES}
 )
+
+add_executable(test_ipc
+        ${TEST_DIR}/test_ipc.c
+        ${COMMON_SOURCES}
+)
+
+target_include_directories(test_ipc PRIVATE ${SRC_DIR})
+
+add_executable(test_security
+        ${TEST_DIR}/test_security.c
+        ${COMMON_SOURCES}
+)
+
+target_include_directories(test_security PRIVATE ${SRC_DIR})
 
 target_include_directories(test_logger PRIVATE ${SRC_DIR})
