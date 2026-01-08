@@ -299,3 +299,20 @@ int ipc_cleanup(void) {
 
     return ret;
 }
+
+int ipc_get_ferry_max_luggage(int ferry_id) {
+    if (state == NULL || ferry_id < 0 || ferry_id >= MAX_FERRIES) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    int max_luggage = -1;
+    if (state->ferries[ferry_id].active) {
+        max_luggage = state->ferries[ferry_id].max_luggage_weight;
+    }
+
+    ipc_unlock();
+
+    return max_luggage;
+}

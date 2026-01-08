@@ -24,5 +24,6 @@ void ipc_unregister_ferry(int ferry_id);
 int ipc_find_available_ferry(int luggage_weight);
 int ipc_board_ferry(int ferry_id, int passenger_id);
 bool ipc_is_ferry_full(int ferry_id);
+int ipc_get_ferry_max_luggage(int ferry_id);
 
 #endif

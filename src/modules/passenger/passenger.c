@@ -2,6 +2,7 @@
 #include "common/shared_state.h"
 #include "utils/passenger/random_passenger.h"
 #include "utils/logger/colors.h"
+#include "utils/logger/logger.h"
 #include "ipc/ipc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,12 @@
 
 int main(void) {
     pid_t my_pid = getpid();
+
+    // Initialize logger for this passenger process
+    if (logger_init() == -1) {
+        // Non-fatal: continue without file logging, but warn
+        fprintf(stderr, "[PASSENGER-%d] Warning: Logger initialization failed\n", my_pid);
+    }
 
     PassengerAttributes attr = random_passenger_attributes();
 
@@ -25,6 +32,7 @@ int main(void) {
 
     if (ipc_attach() == -1) {
         fprintf(stderr, "[PASSENGER-%d] Failed to attach to IPC\n", my_pid);
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -32,6 +40,7 @@ int main(void) {
     if (my_id == -1) {
         printf("%s[PASSENGER-%d]%s ERROR: No space available\n",
                C_ERROR, my_pid, COLOR_RESET);
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -44,9 +53,10 @@ int main(void) {
                C_ERROR, my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT, COLOR_RESET);
         printf("%s[PASSENGER-%d]%s Returning to check-in hall...\n",
                C_WARNING, my_pid, COLOR_RESET);
-
+        log_passenger_rejected(my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT);
         sleep(1);
         ipc_unregister_passenger(my_id);
+        logger_cleanup();
         return EXIT_SUCCESS;
     } else {
         printf("%s[PASSENGER-%d] ✓ Luggage OK (%dkg <= %dkg)%s\n",
@@ -89,8 +99,11 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: No ferry found after %d attempts\n",
                C_ERROR, my_pid, COLOR_RESET, MAX_ATTEMPTS);
         ipc_unregister_passenger(my_id);
+
         return EXIT_FAILURE;
     }
+
+    int ferry_max_luggage = ipc_get_ferry_max_luggage(ferry_id);
 
     printf("%s[PASSENGER-%d]%s Found Ferry #%d!%s\n",
            C_SUCCESS, my_pid, COLOR_RESET, ferry_id,
@@ -104,6 +117,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to board Ferry #%d\n",
                C_ERROR, my_pid, COLOR_RESET, ferry_id);
         ipc_unregister_passenger(my_id);
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
@@ -119,6 +133,7 @@ int main(void) {
 
     ipc_unregister_passenger(my_id);
     printf("%s[PASSENGER-%d]%s Unregistered\n", STYLE_DIM, my_pid, COLOR_RESET);
+    logger_cleanup();
 
     return EXIT_SUCCESS;
 }
