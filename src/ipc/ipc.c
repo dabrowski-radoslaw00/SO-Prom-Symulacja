@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <signal.h>
+#include <unistd.h>
 
 union semun {
     int val;
@@ -21,6 +23,7 @@ static SystemState *state = NULL;
 
 int ipc_init(void) {
     shm_id = shmget(SHM_KEY, sizeof(SystemState), IPC_CREAT | IPC_EXCL | IPC_PERMS);
+
     if (shm_id == -1) {
         perror("shmget");
         return -1;
@@ -58,6 +61,12 @@ int ipc_init(void) {
     for (int i = 0; i < GANGWAY_CAPACITY; i++) {
         state->gangway.passenger_ids[i] = -1;
     }
+
+    state->num_ferry_pids = 0;
+    state->num_passenger_pids = 0;
+    state->signal1_received = 0;
+    state->signal2_received = 0;
+    state->boarding_allowed = true;
 
     sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_CREAT | IPC_EXCL | IPC_PERMS);
 
@@ -803,4 +812,128 @@ int ipc_get_gangway_count(void) {
     ipc_unlock();
 
     return count;
+}
+
+void ipc_register_ferry_pid(pid_t pid) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    if (state->num_ferry_pids < MAX_FERRY_PIDS) {
+        state->ferry_pids[state->num_ferry_pids++] = pid;
+    }
+    ipc_unlock();
+}
+
+void ipc_unregister_ferry_pid(pid_t pid) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    for (int i = 0; i < state->num_ferry_pids; i++) {
+        if (state->ferry_pids[i] == pid) {
+            for (int j = i; j < state->num_ferry_pids - 1; j++) {
+                state->ferry_pids[j] = state->ferry_pids[j + 1];
+            }
+            state->num_ferry_pids--;
+            break;
+        }
+    }
+    ipc_unlock();
+}
+
+void ipc_register_passenger_pid(pid_t pid) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    if (state->num_passenger_pids < MAX_PASSENGER_PIDS) {
+        state->passenger_pids[state->num_passenger_pids++] = pid;
+    }
+    ipc_unlock();
+}
+
+void ipc_unregister_passenger_pid(pid_t pid) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    for (int i = 0; i < state->num_passenger_pids; i++) {
+        if (state->passenger_pids[i] == pid) {
+            for (int j = i; j < state->num_passenger_pids - 1; j++) {
+                state->passenger_pids[j] = state->passenger_pids[j + 1];
+            }
+            state->num_passenger_pids--;
+            break;
+        }
+    }
+    ipc_unlock();
+}
+
+void ipc_send_signal_to_ferries(int sig) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    for (int i = 0; i < state->num_ferry_pids; i++) {
+        if (state->ferry_pids[i] > 0) {
+            kill(state->ferry_pids[i], sig);
+        }
+    }
+    if (sig == SIGUSR1) {
+        state->signal1_received = 1;
+    }
+    ipc_unlock();
+}
+
+void ipc_send_signal_to_passengers(int sig) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    for (int i = 0; i < state->num_passenger_pids; i++) {
+        if (state->passenger_pids[i] > 0) {
+            kill(state->passenger_pids[i], sig);
+        }
+    }
+
+    if (sig == SIGUSR2) {
+        state->signal2_received = 1;
+        state->boarding_allowed = false;
+    }
+    ipc_unlock();
+}
+
+void ipc_send_signal_to_all(int sig) {
+    ipc_send_signal_to_ferries(sig);
+    ipc_send_signal_to_passengers(sig);
+}
+
+bool ipc_is_boarding_allowed(void) {
+    if (state == NULL) return false;
+
+    ipc_lock();
+    bool allowed = state->boarding_allowed;
+    ipc_unlock();
+    return allowed;
+}
+
+void ipc_set_boarding_allowed(bool allowed) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    state->boarding_allowed = allowed;
+    ipc_unlock();
+}
+
+bool ipc_check_force_departure(void) {
+    if (state == NULL) return false;
+
+    ipc_lock();
+    bool force = (state->signal1_received == 1);
+    ipc_unlock();
+    return force;
+}
+
+void ipc_set_force_departure(bool active) {
+    if (state == NULL) return;
+
+
+    ipc_lock();
+    state->signal1_received = active ? 1 : 0;
+    ipc_unlock();
 }

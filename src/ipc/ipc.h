@@ -42,4 +42,18 @@ void ipc_exit_gangway(int passenger_id);
 bool ipc_is_gangway_empty(void);
 int ipc_get_gangway_count(void);
 
+void ipc_register_ferry_pid(pid_t pid);
+void ipc_unregister_ferry_pid(pid_t pid);
+void ipc_register_passenger_pid(pid_t pid);
+void ipc_unregister_passenger_pid(pid_t pid);
+
+void ipc_send_signal_to_ferries(int sig);
+void ipc_send_signal_to_passengers(int sig);
+void ipc_send_signal_to_all(int sig);
+
+bool ipc_is_boarding_allowed(void);
+void ipc_set_boarding_allowed(bool allowed);
+bool ipc_check_force_departure(void);
+void ipc_set_force_departure(bool active);
+
 #endif

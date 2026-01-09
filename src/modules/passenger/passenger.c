@@ -7,9 +7,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+
+static volatile sig_atomic_t stop_boarding_flag = 0;
+static pid_t my_pid_global;
+
+static void sigusr2_handler(int sig) {
+    (void)sig;
+    stop_boarding_flag = 1;
+}
+
+static void setup_signal_handlers(void) {
+    struct sigaction sa;
+    sa.sa_handler = sigusr2_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGUSR2, &sa, NULL) == -1) {
+        perror("[PASSENGER] sigaction SIGUSR2");
+    }
+}
 
 int main(void) {
-    pid_t my_pid = getpid();
+    my_pid_global = getpid();
+    pid_t my_pid = my_pid_global;
+
+    setup_signal_handlers();
 
     if (logger_init() == -1) {
         fprintf(stderr, "[PASSENGER-%d] Warning: Logger initialization failed\n", my_pid);
@@ -34,17 +57,29 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
+    ipc_register_passenger_pid(my_pid);
+
     int my_id = ipc_register_passenger(my_pid, attr.gender, attr.luggage_weight, attr.type);
     if (my_id == -1) {
         printf("%s[PASSENGER-%d]%s ERROR: No space available\n",
                C_ERROR, my_pid, COLOR_RESET);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
 
     printf("%s[PASSENGER-%d]%s Registered with ID: %s%d%s\n",
-           C_INFO, my_pid, COLOR_RESET,
-           STYLE_BOLD, my_id, COLOR_RESET);
+             C_INFO, my_pid, COLOR_RESET,
+             STYLE_BOLD, my_id, COLOR_RESET);
+
+    if (stop_boarding_flag || !ipc_is_boarding_allowed()) {
+        printf("%s[PASSENGER-%d]%s Boarding stopped by captain (SIGUSR2) - leaving%s\n",
+               C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+        ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
+        logger_cleanup();
+        return EXIT_SUCCESS;
+    }
 
     if (attr.luggage_weight > MAX_LUGGAGE_WEIGHT) {
         printf("%s[PASSENGER-%d] ❌ Luggage too heavy (%dkg > %dkg) - REJECTED%s\n",
@@ -54,6 +89,7 @@ int main(void) {
         log_passenger_rejected(my_pid, attr.luggage_weight, MAX_LUGGAGE_WEIGHT);
         sleep(1);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_SUCCESS;
     } else {
@@ -77,6 +113,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to join security queue\n",
                C_ERROR, my_pid, COLOR_RESET);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
@@ -92,6 +129,15 @@ int main(void) {
            C_INFO, my_pid, COLOR_RESET);
 
     while (station_id < 0 && assignment_attempts < MAX_ASSIGNMENT_ATTEMPTS) {
+        if (stop_boarding_flag) {
+            printf("%s[PASSENGER-%d]%s SIGUSR2 received - leaving queue%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+            ipc_unregister_passenger(my_id);
+            ipc_unregister_passenger_pid(my_pid);
+            logger_cleanup();
+            return EXIT_SUCCESS;
+        }
+
         station_id = ipc_assign_to_security_station(my_id);
 
         if (station_id < 0) {
@@ -130,6 +176,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to get security station assignment\n",
                C_ERROR, my_pid, COLOR_RESET);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
@@ -152,6 +199,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to complete security check\n",
                C_ERROR, my_pid, COLOR_RESET);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
@@ -173,6 +221,15 @@ int main(void) {
     const int SEARCH_DELAY = (attr.type == VIP) ? 500000 : 1000000;
 
     while (ferry_id == -1 && attempts < MAX_ATTEMPTS) {
+        if (stop_boarding_flag) {
+            printf("%s[PASSENGER-%d]%s SIGUSR2 received - leaving%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+            ipc_unregister_passenger(my_id);
+            ipc_unregister_passenger_pid(my_pid);
+            logger_cleanup();
+            return EXIT_SUCCESS;
+        }
+
         ferry_id = ipc_find_available_ferry(attr.luggage_weight);
 
         if (ferry_id == -1) {
@@ -192,11 +249,10 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: No ferry found after %d attempts\n",
                C_ERROR, my_pid, COLOR_RESET, MAX_ATTEMPTS);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
-
-    int ferry_max_luggage = ipc_get_ferry_max_luggage(ferry_id);
 
     printf("%s[PASSENGER-%d]%s Found Ferry #%d!%s\n",
            C_SUCCESS, my_pid, COLOR_RESET, ferry_id,
@@ -222,6 +278,7 @@ int main(void) {
             printf("%s[PASSENGER-%d]%s ERROR: Failed to enter gangway\n",
                    C_ERROR, my_pid, COLOR_RESET);
             ipc_unregister_passenger(my_id);
+            ipc_unregister_passenger_pid(my_pid);
             logger_cleanup();
             return EXIT_FAILURE;
         }
@@ -231,6 +288,7 @@ int main(void) {
         printf("%s[PASSENGER-%d]%s ERROR: Could not enter gangway after %d attempts\n",
                C_ERROR, my_pid, COLOR_RESET, MAX_GANGWAY_ATTEMPTS);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
@@ -247,6 +305,7 @@ int main(void) {
                C_ERROR, my_pid, COLOR_RESET, ferry_id);
         ipc_exit_gangway(my_id);
         ipc_unregister_passenger(my_id);
+        ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
         return EXIT_FAILURE;
     }
@@ -262,6 +321,7 @@ int main(void) {
 
     printf("%s[PASSENGER-%d] ✓ Journey completed%s\n", C_SUCCESS, my_pid, COLOR_RESET);
 
+    ipc_unregister_passenger_pid(my_pid);
     ipc_unregister_passenger(my_id);
     printf("%s[PASSENGER-%d]%s Unregistered\n", STYLE_DIM, my_pid, COLOR_RESET);
     logger_cleanup();

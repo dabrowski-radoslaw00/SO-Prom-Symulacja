@@ -1,74 +1,78 @@
 #include "ipc/ipc.h"
-#include "common/shared_state.h"
-#include "common/config.h"
+#include "utils/logger/logger.h"
+#include "utils/logger/colors.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/shm.h>
-#include <sys/sem.h>
+#include <time.h>
+
+#define CAPTAIN_WORK_TIME 12
+#define SIGNAL2_AFTER 8
 
 int main(void) {
-    printf("[CAPTAIN] Port Captain starting...\n");
-    
-    int shm_id = shmget(SHM_KEY, sizeof(SystemState), IPC_PERMS);
-    if (shm_id == -1) {
-        perror("[CAPTAIN] shmget");
-        return EXIT_FAILURE;
+    printf("%s[CAPTAIN]%s Port Captain starting...\n", COLOR_BRIGHT_YELLOW, COLOR_RESET);
+
+    if (logger_init() == -1) {
+        fprintf(stderr, "[CAPTAIN] Warning: Logger initialization failed\n");
     }
-    
-    SystemState *state = (SystemState*)shmat(shm_id, NULL, 0);
-    if (state == (void*)-1) {
-        perror("[CAPTAIN] shmat");
+
+
+    if (ipc_attach() == -1) {
+        fprintf(stderr, "[CAPTAIN] Failed to attach to IPC\n");
+        logger_cleanup();
         return EXIT_FAILURE;
     }
 
-    int sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_PERMS);
-    if (sem_id == -1) {
-        perror("[CAPTAIN] semget");
-        shmdt(state);
-        return EXIT_FAILURE;
-    }
+    printf("%s[CAPTAIN]%s Connected to shared memory and semaphores\n",
+           COLOR_BRIGHT_YELLOW, COLOR_RESET);
 
-    printf("[CAPTAIN] Connected to shared memory and semaphores\n");
+    log_message("Port captain started");
 
-    struct sembuf lock_op;
-    lock_op.sem_num = SEM_SHM_MUTEX;
-    lock_op.sem_op = -1;
-    lock_op.sem_flg = 0;
-    
-    if (semop(sem_id, &lock_op, 1) == -1) {
-        perror("[CAPTAIN] semop lock");
-        shmdt(state);
-        return EXIT_FAILURE;
-    }
-    
-    printf("[CAPTAIN] System running: %s\n", 
-           state->system_running ? "YES" : "NO");
-    
-    struct sembuf unlock_op;
-    unlock_op.sem_num = SEM_SHM_MUTEX;
-    unlock_op.sem_op = 1;
-    unlock_op.sem_flg = 0;
-    
-    if (semop(sem_id, &unlock_op, 1) == -1) {
-        perror("[CAPTAIN] semop unlock");
-        shmdt(state);
-        return EXIT_FAILURE;
-    }
+    printf("%s[CAPTAIN]%s Managing port operations...\n",
+           COLOR_BRIGHT_YELLOW, COLOR_RESET);
 
-    printf("[CAPTAIN] Managing port operations...\n");
-    
-    for (int i = 1; i <= 5; i++) {
+    time_t start_time = time(NULL);
+    bool signal2_sent = false;
+
+    while (1) {
         sleep(1);
-        printf("[CAPTAIN] Working... (%d/5)\n", i);
+
+        time_t now = time(NULL);
+        int elapsed = (int)difftime(now, start_time);
+
+        printf("%s[CAPTAIN]%s Working... (%d/%d sec)\n",
+               COLOR_BRIGHT_YELLOW, COLOR_RESET, elapsed, CAPTAIN_WORK_TIME);
+
+        if (!signal2_sent && elapsed >= SIGNAL2_AFTER) {
+            printf("%s[CAPTAIN] 📢 Sending SIGUSR2 - Stop accepting new passengers!%s\n",
+                   COLOR_BRIGHT_RED, COLOR_RESET);
+
+            ipc_set_boarding_allowed(false);
+            ipc_send_signal_to_passengers(SIGUSR2);
+
+            log_message("Captain sent SIGUSR2 - boarding stopped");
+            signal2_sent = true;
+        }
+
+        if (elapsed >= CAPTAIN_WORK_TIME) {
+            break;
+        }
     }
 
-    printf("[CAPTAIN] Port Captain finished\n");
+    // Send SIGUSR1 to force remaining ferries to depart
+    printf("%s[CAPTAIN] 📢 Sending SIGUSR1 - Force ferry departure!%s\n",
+           COLOR_BRIGHT_RED, COLOR_RESET);
 
-    if (shmdt(state) == -1) {
-        perror("[CAPTAIN] shmdt");
-        return EXIT_FAILURE;
-    }
+    ipc_set_force_departure(true);
+    ipc_send_signal_to_ferries(SIGUSR1);
+
+    log_message("Captain sent SIGUSR1 - force departure");
+
+    printf("%s[CAPTAIN]%s Port Captain finished\n", COLOR_BRIGHT_YELLOW, COLOR_RESET);
+    log_message("Port captain finished");
+
+    logger_cleanup();
     
     return EXIT_SUCCESS;
 }

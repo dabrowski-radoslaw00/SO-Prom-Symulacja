@@ -6,14 +6,43 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
+#include <signal.h>
 #include <time.h>
 
 static int shm_id = -1;
 static int sem_id = -1;
 static SystemState *state = NULL;
+
+static volatile sig_atomic_t force_departure_flag = 0;
+
+static void sigusr1_handler(int sig) {
+    (void)sig;
+    force_departure_flag = 1;
+}
+
+static void setup_signal_handlers(void) {
+    struct sigaction sa;
+    sa.sa_handler = sigusr1_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        perror("[FERRY] sigaction SIGUSR1");
+    }
+}
+
+static void block_signals(sigset_t *oldmask) {
+    sigset_t blockmask;
+    sigemptyset(&blockmask);
+    sigaddset(&blockmask, SIGUSR1);
+    sigprocmask(SIG_BLOCK, &blockmask, oldmask);
+}
+
+static void unblock_signals(sigset_t *oldmask) {
+    sigprocmask(SIG_SETMASK, oldmask, NULL);
+}
 
 static void lock_mutex(void) {
     struct sembuf op;
@@ -92,6 +121,13 @@ static void set_ferry_status(int ferry_id, FerryStatus new_status) {
 int main(void) {
     pid_t my_pid = getpid();
 
+
+    setup_signal_handlers();
+
+    if (logger_init() == -1) {
+        fprintf(stderr, "[FERRY-%d] Warning: Logger initialization failed\n", my_pid);
+    }
+
     // Losowy limit bagażu dla tego promu (20-30 kg)
     srand(time(NULL) ^ my_pid);
     int max_luggage = 20 + (rand() % 11);  // 20-30 kg
@@ -122,10 +158,18 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
+    if (ipc_attach() == -1) {
+        fprintf(stderr, "[FERRY-%d] Warning: ipc_attach failed\n", my_pid);
+    }
+
+
+    ipc_register_ferry_pid(my_pid);
+
     int my_id = register_ferry(max_luggage);
     if (my_id == -1) {
         printf("%s[FERRY-%d]%s ERROR: No space for ferry\n",
                C_ERROR, my_pid, COLOR_RESET);
+        ipc_unregister_ferry_pid(my_pid);
         shmdt(state);
         logger_cleanup();
         return EXIT_FAILURE;
@@ -145,13 +189,42 @@ int main(void) {
 
     set_ferry_status(my_id, FERRY_BOARDING);
 
-    usleep(100000);  // 100ms
+    usleep(100000);
 
     time_t boarding_start = time(NULL);
-    const int BOARDING_TIME_LIMIT = 8;  // Max 8 sekund na boarding
+    const int BOARDING_TIME_LIMIT = 20;
 
     while (1) {
-        sleep(1);
+
+        if (force_departure_flag) {
+            sigset_t oldmask;
+            block_signals(&oldmask);
+
+            lock_mutex();
+            int current_passengers = state->ferries[my_id].num_passengers;
+            unlock_mutex();
+
+            unblock_signals(&oldmask);
+
+            printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
+            break;
+        }
+
+        if (ipc_check_force_departure()) {
+            sigset_t oldmask;
+            block_signals(&oldmask);
+
+            lock_mutex();
+            int current_passengers = state->ferries[my_id].num_passengers;
+            unlock_mutex();
+
+            unblock_signals(&oldmask);
+
+            printf("%s[FERRY-%d]%s Force departure flag detected - departing with %d passengers%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
+            break;
+        }
 
         if (ipc_is_ferry_full(my_id)) {
             printf("%s[FERRY-%d] ✓ Ferry is FULL (%d/%d passengers)!%s\n",
@@ -171,6 +244,18 @@ int main(void) {
         if (difftime(now, boarding_start) >= BOARDING_TIME_LIMIT) {
             printf("%s[FERRY-%d]%s Boarding time expired, departing with %d passengers\n",
                    C_WARNING, my_pid, COLOR_RESET, current_passengers);
+            break;
+        }
+
+        sleep(1);
+
+        if (force_departure_flag || ipc_check_force_departure()) {
+            lock_mutex();
+            int current_passengers = state->ferries[my_id].num_passengers;
+            unlock_mutex();
+
+            printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
             break;
         }
     }
@@ -244,6 +329,7 @@ int main(void) {
              my_id);
     log_message(log_msg);
 
+    ipc_unregister_ferry_pid(my_pid);
     unregister_ferry(my_id);
     printf("%s[FERRY-%d]%s Unregistered\n",
            STYLE_DIM, my_pid, COLOR_RESET);
@@ -252,7 +338,6 @@ int main(void) {
         perror("[FERRY] shmdt");
         return EXIT_FAILURE;
     }
-
 
     logger_cleanup();
     return EXIT_SUCCESS;

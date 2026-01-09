@@ -5,9 +5,12 @@
 #include <stdbool.h>
 #include <sys/types.h>
 #include <time.h>
+#include <signal.h>
 
 #define MAX_PASSENGERS 10
 #define MAX_SECURITY_QUEUE 50
+#define MAX_FERRY_PIDS 10
+#define MAX_PASSENGER_PIDS 100
 
 typedef struct {
     int id;
@@ -18,7 +21,6 @@ typedef struct {
     PassengerType type;
     PassengerStatus status;
     int ferry_id;
-
     int security_station_id;
     int queue_position;
     int times_passed;
@@ -64,6 +66,13 @@ typedef struct {
     int security_queue_head;
     int security_queue_tail;
     Gangway gangway;
+    pid_t ferry_pids[MAX_FERRY_PIDS];
+    int num_ferry_pids;
+    pid_t passenger_pids[MAX_PASSENGER_PIDS];
+    int num_passenger_pids;
+    volatile sig_atomic_t signal1_received;
+    volatile sig_atomic_t signal2_received;
+    bool boarding_allowed;
 } SystemState;
 
 

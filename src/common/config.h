@@ -60,6 +60,4 @@ typedef enum {
  FERRY_RETURNING = 3         // Wraca do portu
 } FerryStatus;
 
-
-
 #endif
