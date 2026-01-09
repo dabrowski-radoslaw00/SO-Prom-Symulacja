@@ -47,6 +47,12 @@ typedef struct {
 } SecurityStation;
 
 typedef struct {
+    int num_people;
+    int passenger_ids[GANGWAY_CAPACITY];
+    int target_ferry_id;
+} Gangway;
+
+typedef struct {
     bool system_running;
     int total_passengers;
     PassengerInfo passengers[MAX_PASSENGERS];
@@ -57,6 +63,8 @@ typedef struct {
     int security_queue_size;
     int security_queue_head;
     int security_queue_tail;
+    Gangway gangway;
 } SystemState;
+
 
 #endif

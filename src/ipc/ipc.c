@@ -53,7 +53,14 @@ int ipc_init(void) {
         state->security_queue[i] = -1;
     }
 
+    state->gangway.num_people = 0;
+    state->gangway.target_ferry_id = -1;
+    for (int i = 0; i < GANGWAY_CAPACITY; i++) {
+        state->gangway.passenger_ids[i] = -1;
+    }
+
     sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_CREAT | IPC_EXCL | IPC_PERMS);
+
     if (sem_id == -1) {
         perror("semget");
         shmdt(state);
@@ -668,4 +675,132 @@ int ipc_complete_security_check(int passenger_id) {
     ipc_unlock();
 
     return 0;
+}
+int ipc_pass_in_queue(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    if (!state->passengers[passenger_id].in_security_queue) {
+        ipc_unlock();
+        return -1;
+    }
+
+    if (state->passengers[passenger_id].times_passed >= MAX_QUEUE_PASSES) {
+        ipc_unlock();
+        return -2;
+    }
+
+    int current_pos = state->passengers[passenger_id].queue_position;
+    if (current_pos >= state->security_queue_size - 1) {
+        ipc_unlock();
+        return -3;
+    }
+
+    int next_pos = current_pos + 1;
+    int next_idx = (state->security_queue_head + next_pos) % MAX_SECURITY_QUEUE;
+    int next_passenger_id = state->security_queue[next_idx];
+
+    if (next_passenger_id < 0 || next_passenger_id >= MAX_PASSENGERS) {
+        ipc_unlock();
+        return -4;
+    }
+
+    int temp_pos = state->passengers[passenger_id].queue_position;
+    state->passengers[passenger_id].queue_position = state->passengers[next_passenger_id].queue_position;
+    state->passengers[next_passenger_id].queue_position = temp_pos;
+
+    int current_idx = (state->security_queue_head + current_pos) % MAX_SECURITY_QUEUE;
+    state->security_queue[current_idx] = next_passenger_id;
+    state->security_queue[next_idx] = passenger_id;
+
+    state->passengers[passenger_id].times_passed++;
+
+    int new_position = state->passengers[passenger_id].queue_position;
+
+    ipc_unlock();
+
+    return new_position;
+}
+
+int ipc_enter_gangway(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return -1;
+    }
+
+    ipc_lock();
+
+    if (state->gangway.num_people >= GANGWAY_CAPACITY) {
+        ipc_unlock();
+        return -2;
+    }
+
+    for (int i = 0; i < state->gangway.num_people; i++) {
+        if (state->gangway.passenger_ids[i] == passenger_id) {
+            ipc_unlock();
+            return -3;
+        }
+    }
+
+    int slot = state->gangway.num_people;
+    state->gangway.passenger_ids[slot] = passenger_id;
+    state->gangway.num_people++;
+
+    int count = state->gangway.num_people;
+
+    ipc_unlock();
+
+    return count;
+}
+
+void ipc_exit_gangway(int passenger_id) {
+    if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
+        return;
+    }
+
+    ipc_lock();
+
+    int found_slot = -1;
+    for (int i = 0; i < state->gangway.num_people; i++) {
+        if (state->gangway.passenger_ids[i] == passenger_id) {
+            found_slot = i;
+            break;
+        }
+    }
+
+    if (found_slot != -1) {
+        for (int i = found_slot; i < state->gangway.num_people - 1; i++) {
+            state->gangway.passenger_ids[i] = state->gangway.passenger_ids[i + 1];
+        }
+        state->gangway.num_people--;
+        state->gangway.passenger_ids[state->gangway.num_people] = -1;
+    }
+
+    ipc_unlock();
+}
+
+bool ipc_is_gangway_empty(void) {
+    if (state == NULL) {
+        return true;
+    }
+
+    ipc_lock();
+    bool is_empty = (state->gangway.num_people == 0);
+    ipc_unlock();
+
+    return is_empty;
+}
+
+int ipc_get_gangway_count(void) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    ipc_lock();
+    int count = state->gangway.num_people;
+    ipc_unlock();
+
+    return count;
 }

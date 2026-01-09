@@ -35,5 +35,11 @@ int ipc_assign_to_security_station(int passenger_id);
 void ipc_leave_security_station(int passenger_id, int station_id);
 int ipc_get_available_station_for_gender(Gender gender);
 int ipc_complete_security_check(int passenger_id);
+int ipc_pass_in_queue(int passenger_id);
+
+int ipc_enter_gangway(int passenger_id);
+void ipc_exit_gangway(int passenger_id);
+bool ipc_is_gangway_empty(void);
+int ipc_get_gangway_count(void);
 
 #endif

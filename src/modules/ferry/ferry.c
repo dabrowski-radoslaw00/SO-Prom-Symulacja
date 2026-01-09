@@ -192,7 +192,29 @@ int main(void) {
          state->ferries[my_id].max_luggage_weight, type_str);
         }
     }
+
     unlock_mutex();
+
+    printf("%s[FERRY-%d]%s Waiting for gangway to clear...%s\n",
+           C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
+
+    int gangway_wait = 0;
+    const int MAX_GANGWAY_WAIT = 10;
+
+    while (!ipc_is_gangway_empty() && gangway_wait < MAX_GANGWAY_WAIT) {
+        printf("%s[FERRY-%d]%s Gangway not empty (%d passengers), waiting...%s\n",
+               C_WARNING, my_pid, COLOR_RESET, ipc_get_gangway_count(), COLOR_RESET);
+        sleep(1);
+        gangway_wait++;
+    }
+
+    if (!ipc_is_gangway_empty()) {
+        printf("%s[FERRY-%d]%s WARNING: Departing with passengers still on gangway!%s\n",
+               C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+    } else {
+        printf("%s[FERRY-%d]%s Gangway clear%s\n",
+               C_SUCCESS, my_pid, COLOR_RESET, COLOR_RESET);
+    }
 
     printf("%s[FERRY-%d] ⛴️  Departing...%s\n",
            COLOR_BRIGHT_GREEN, my_pid, COLOR_RESET);
@@ -209,7 +231,7 @@ int main(void) {
              my_id, 1);
     log_message(log_msg);
 
-    sleep(FERRY_TRIP_TIME);  // Czas rejsu
+    sleep(FERRY_TRIP_TIME);
 
     printf("%s[FERRY-%d] ⚓ Returned to port%s\n",
            COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET);

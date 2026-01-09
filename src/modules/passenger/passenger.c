@@ -68,7 +68,7 @@ int main(void) {
     sleep(1);
 
 
- printf("%s[PASSENGER-%d]%s Joining security control queue...%s\n",
+    printf("%s[PASSENGER-%d]%s Joining security control queue...%s\n",
            C_INFO, my_pid, COLOR_RESET,
            (attr.type == VIP) ? " [VIP PRIORITY]" : "");
 
@@ -96,6 +96,7 @@ int main(void) {
 
         if (station_id < 0) {
             int current_queue_pos = ipc_get_queue_position(my_id);
+
             if (current_queue_pos < 0) {
                 ipc_lock();
                 SystemState *state = ipc_get_state();
@@ -105,6 +106,19 @@ int main(void) {
                     break;
                 }
                 ipc_unlock();
+            } else {
+                if (current_queue_pos < ipc_get_queue_size() - 1) {
+                    if (rand() % 3 == 0) {
+                        int new_pos = ipc_pass_in_queue(my_id);
+                        if (new_pos >= 0) {
+                            printf("%s[PASSENGER-%d]%s Let someone pass in queue (new position: %d)%s\n",
+                                   C_WARNING, my_pid, COLOR_RESET, new_pos, COLOR_RESET);
+                        } else if (new_pos == -2) {
+                            printf("%s[PASSENGER-%d]%s Cannot pass more than %d times (frustration limit reached)%s\n",
+                                   C_WARNING, my_pid, COLOR_RESET, MAX_QUEUE_PASSES, COLOR_RESET);
+                        }
+                    }
+                }
             }
 
             usleep(500000);
@@ -127,11 +141,11 @@ int main(void) {
     printf("%s[PASSENGER-%d]%s Going through security check...\n",
            C_INFO, my_pid, COLOR_RESET);
 
-    #ifdef SECURITY_CHECK_TIME
-        sleep(SECURITY_CHECK_TIME);
-    #else
+#ifdef SECURITY_CHECK_TIME
+    sleep(SECURITY_CHECK_TIME);
+#else
         sleep(2);
-    #endif
+#endif
 
 
     if (ipc_complete_security_check(my_id) != 0) {
@@ -188,6 +202,42 @@ int main(void) {
            C_SUCCESS, my_pid, COLOR_RESET, ferry_id,
            (attr.type == VIP) ? " 👑" : "");
 
+    printf("%s[PASSENGER-%d]%s Waiting to enter gangway...%s\n",
+           C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
+
+    int gangway_attempts = 0;
+    const int MAX_GANGWAY_ATTEMPTS = 20;
+    int gangway_result = -1;
+
+    while (gangway_result < 0 && gangway_attempts < MAX_GANGWAY_ATTEMPTS) {
+        gangway_result = ipc_enter_gangway(my_id);
+
+        if (gangway_result == -2) {
+            printf("%s[PASSENGER-%d]%s Gangway full (%d/%d), waiting...%s\n",
+                   C_WARNING, my_pid, COLOR_RESET,
+                   ipc_get_gangway_count(), GANGWAY_CAPACITY, COLOR_RESET);
+            usleep(300000);
+            gangway_attempts++;
+        } else if (gangway_result < 0) {
+            printf("%s[PASSENGER-%d]%s ERROR: Failed to enter gangway\n",
+                   C_ERROR, my_pid, COLOR_RESET);
+            ipc_unregister_passenger(my_id);
+            logger_cleanup();
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (gangway_result < 0) {
+        printf("%s[PASSENGER-%d]%s ERROR: Could not enter gangway after %d attempts\n",
+               C_ERROR, my_pid, COLOR_RESET, MAX_GANGWAY_ATTEMPTS);
+        ipc_unregister_passenger(my_id);
+        logger_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    printf("%s[PASSENGER-%d]%s On gangway (%d/%d)%s\n",
+           C_INFO, my_pid, COLOR_RESET, gangway_result, GANGWAY_CAPACITY, COLOR_RESET);
+
     printf("%s[PASSENGER-%d]%s Boarding Ferry #%d...%s\n",
            C_INFO, my_pid, COLOR_RESET, ferry_id,
            (attr.type == VIP) ? " [VIP]" : "");
@@ -195,14 +245,16 @@ int main(void) {
     if (ipc_board_ferry(ferry_id, my_id) == -1) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to board Ferry #%d\n",
                C_ERROR, my_pid, COLOR_RESET, ferry_id);
+        ipc_exit_gangway(my_id);
         ipc_unregister_passenger(my_id);
         logger_cleanup();
         return EXIT_FAILURE;
     }
 
+    ipc_exit_gangway(my_id);
+
     printf("%s[PASSENGER-%d] ⛴️  On board Ferry #%d!%s\n",
            C_SUCCESS, my_pid, ferry_id, COLOR_RESET);
-
     printf("%s[PASSENGER-%d]%s Waiting for departure...\n",
            STYLE_DIM, my_pid, COLOR_RESET);
 
