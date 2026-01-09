@@ -261,12 +261,17 @@ int main(void) {
     printf("%s[PASSENGER-%d]%s Waiting to enter gangway...%s\n",
            C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
 
+    if (attr.type == VIP) {
+        printf("%s[PASSENGER-%d] 👑 VIP priority - will board first%s\n",
+               C_VIP, my_pid, COLOR_RESET);
+    }
+
     int gangway_attempts = 0;
     const int MAX_GANGWAY_ATTEMPTS = 20;
     int gangway_result = -1;
 
     while (gangway_result < 0 && gangway_attempts < MAX_GANGWAY_ATTEMPTS) {
-        gangway_result = ipc_enter_gangway(my_id);
+        gangway_result = ipc_enter_gangway(my_id, attr.type == VIP);
 
         if (gangway_result == -2) {
             printf("%s[PASSENGER-%d]%s Gangway full (%d/%d), waiting...%s\n",

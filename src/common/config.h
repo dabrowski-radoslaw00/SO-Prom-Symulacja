@@ -21,7 +21,7 @@
 
 #define MAX_FERRIES 3               // N - Max liczba promów
 #define FERRY_CAPACITY 10           // P - Pojemność promu
-#define FERRY_TRIP_TIME 10          // Ti - Czas rejsu (sekundy)
+#define FERRY_TRIP_TIME 5          // Ti - Czas rejsu (sekundy)
 #define GANGWAY_CAPACITY 5          // K - Pojemność trapu
 
 #define NUM_SECURITY_STATIONS 3     // Liczba stanowisk kontroli

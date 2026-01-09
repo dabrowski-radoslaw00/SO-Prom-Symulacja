@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-#define NUM_PASSENGERS 20
+#define NUM_PASSENGERS 50
 #define NUM_FERRIES 2       
 
 int main(void) {

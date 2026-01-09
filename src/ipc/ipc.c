@@ -734,7 +734,7 @@ int ipc_pass_in_queue(int passenger_id) {
     return new_position;
 }
 
-int ipc_enter_gangway(int passenger_id) {
+int ipc_enter_gangway(int passenger_id, bool is_vip) {
     if (state == NULL || passenger_id < 0 || passenger_id >= MAX_PASSENGERS) {
         return -1;
     }
@@ -753,10 +753,16 @@ int ipc_enter_gangway(int passenger_id) {
         }
     }
 
-    int slot = state->gangway.num_people;
-    state->gangway.passenger_ids[slot] = passenger_id;
-    state->gangway.num_people++;
+    if (is_vip && state->gangway.num_people > 0) {
+        for (int i = state->gangway.num_people; i > 0; i--) {
+            state->gangway.passenger_ids[i] = state->gangway.passenger_ids[i - 1];
+        }
+        state->gangway.passenger_ids[0] = passenger_id;
+    } else {
+        state->gangway.passenger_ids[state->gangway.num_people] = passenger_id;
+    }
 
+    state->gangway.num_people++;
     int count = state->gangway.num_people;
 
     ipc_unlock();
