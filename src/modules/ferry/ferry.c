@@ -33,17 +33,6 @@ static void setup_signal_handlers(void) {
     }
 }
 
-static void block_signals(sigset_t *oldmask) {
-    sigset_t blockmask;
-    sigemptyset(&blockmask);
-    sigaddset(&blockmask, SIGUSR1);
-    sigprocmask(SIG_BLOCK, &blockmask, oldmask);
-}
-
-static void unblock_signals(sigset_t *oldmask) {
-    sigprocmask(SIG_SETMASK, oldmask, NULL);
-}
-
 static void lock_mutex(void) {
     struct sembuf op;
     op.sem_num = SEM_SHM_MUTEX;
@@ -118,6 +107,15 @@ static void set_ferry_status(int ferry_id, FerryStatus new_status) {
     unlock_mutex();
 }
 
+static void reset_ferry_for_new_trip(int ferry_id) {
+    lock_mutex();
+    state->ferries[ferry_id].num_passengers = 0;
+    for (int j = 0; j < FERRY_CAPACITY; j++) {
+        state->ferries[ferry_id].passenger_ids[j] = -1;
+    }
+    unlock_mutex();
+}
+
 int main(void) {
     pid_t my_pid = getpid();
 
@@ -130,7 +128,7 @@ int main(void) {
 
     // Losowy limit bagażu dla tego promu (20-30 kg)
     srand(time(NULL) ^ my_pid);
-    int max_luggage = 20 + (rand() % 11);  // 20-30 kg
+    int max_luggage = 20 + (rand() % 11);
 
     printf("%s[FERRY-%d]%s Starting... [Max luggage: %s%dkg%s]\n",
            COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET,
@@ -162,7 +160,6 @@ int main(void) {
         fprintf(stderr, "[FERRY-%d] Warning: ipc_attach failed\n", my_pid);
     }
 
-
     ipc_register_ferry_pid(my_pid);
 
     int my_id = register_ferry(max_luggage);
@@ -180,159 +177,167 @@ int main(void) {
            STYLE_BOLD, my_id, COLOR_RESET);
 
     char log_msg[128];
-    snprintf(log_msg, sizeof(log_msg),
-             "Ferry #%d (PID:%d) registered [capacity:%d, max_luggage:%dkg]",
-             my_id, my_pid, FERRY_CAPACITY, max_luggage);
 
-    printf("%s[FERRY-%d]%s Ready to accept passengers (0/%d)...\n",
-           COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET, FERRY_CAPACITY);
+    const int BOARDING_TIME_LIMIT = 8;
+    int trip_number = 0;
+    bool should_exit = false;
 
-    set_ferry_status(my_id, FERRY_BOARDING);
+    while (!should_exit && state->system_running) {
+        trip_number++;
+        reset_ferry_for_new_trip(my_id);
+        printf("%s[FERRY-%d]%s Ready to accept passengers (0/%d)... [Trip #%d]\n",
+               COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET, FERRY_CAPACITY, trip_number);
 
-    usleep(100000);
+        set_ferry_status(my_id, FERRY_BOARDING);
 
-    time_t boarding_start = time(NULL);
-    const int BOARDING_TIME_LIMIT = 20;
+        usleep(100000);
 
-    while (1) {
+        time_t boarding_start = time(NULL);
 
-        if (force_departure_flag) {
-            sigset_t oldmask;
-            block_signals(&oldmask);
+        while (1) {
+            if (force_departure_flag) {
+                lock_mutex();
+                int current_passengers = state->ferries[my_id].num_passengers;
+                unlock_mutex();
+
+                printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
+                       C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
+                should_exit = true;
+                break;
+            }
+
+            if (ipc_check_force_departure()) {
+                lock_mutex();
+                int current_passengers = state->ferries[my_id].num_passengers;
+                unlock_mutex();
+
+                printf("%s[FERRY-%d]%s Force departure flag detected - departing with %d passengers%s\n",
+                       C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
+                should_exit = true;
+                break;
+            }
+
+            if (!state->system_running) {
+                printf("%s[FERRY-%d]%s System shutting down%s\n",
+                       C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+                should_exit = true;
+                break;
+            }
+
+            if (ipc_is_ferry_full(my_id)) {
+                printf("%s[FERRY-%d] ✓ Ferry is FULL (%d/%d passengers)!%s\n",
+                       C_SUCCESS, my_pid, FERRY_CAPACITY, FERRY_CAPACITY, COLOR_RESET);
+                break;
+            }
 
             lock_mutex();
             int current_passengers = state->ferries[my_id].num_passengers;
             unlock_mutex();
 
-            unblock_signals(&oldmask);
+            printf("%s[FERRY-%d]%s Waiting for passengers... (%d/%d)\n",
+                   COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET,
+                   current_passengers, FERRY_CAPACITY);
 
-            printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
-                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
-            break;
-        }
+            time_t now = time(NULL);
+            if (difftime(now, boarding_start) >= BOARDING_TIME_LIMIT) {
+                printf("%s[FERRY-%d]%s Boarding time expired, departing with %d passengers\n",
+                       C_WARNING, my_pid, COLOR_RESET, current_passengers);
+                break;
+            }
 
-        if (ipc_check_force_departure()) {
-            sigset_t oldmask;
-            block_signals(&oldmask);
+            sleep(1);
 
-            lock_mutex();
-            int current_passengers = state->ferries[my_id].num_passengers;
-            unlock_mutex();
+            if (force_departure_flag || ipc_check_force_departure()) {
+                lock_mutex();
+                int current_passengers = state->ferries[my_id].num_passengers;
+                unlock_mutex();
 
-            unblock_signals(&oldmask);
-
-            printf("%s[FERRY-%d]%s Force departure flag detected - departing with %d passengers%s\n",
-                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
-            break;
-        }
-
-        if (ipc_is_ferry_full(my_id)) {
-            printf("%s[FERRY-%d] ✓ Ferry is FULL (%d/%d passengers)!%s\n",
-                   C_SUCCESS, my_pid, FERRY_CAPACITY, FERRY_CAPACITY, COLOR_RESET);
-            break;
+                printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
+                       C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
+                should_exit = true;
+                break;
+            }
         }
 
         lock_mutex();
-        int current_passengers = state->ferries[my_id].num_passengers;
+        int num_passengers = state->ferries[my_id].num_passengers;
+        printf("%s[FERRY-%d]%s Passenger manifest (Trip #%d):%s\n",
+               STYLE_BOLD, my_pid, COLOR_RESET, trip_number, COLOR_RESET);
+
+        for (int i = 0; i < num_passengers; i++) {
+            int pass_id = state->ferries[my_id].passenger_ids[i];
+            if (pass_id >= 0 && pass_id < MAX_PASSENGERS) {
+                PassengerInfo *p = &state->passengers[pass_id];
+                const char *gender_str = (p->gender == MALE) ? "M" : "F";
+                const char *type_str = (p->type == VIP) ? "VIP" : "REG";
+
+                printf("  - Passenger #%d [%s, %dkg/%dkg, %s]\n",
+                       pass_id, gender_str, p->luggage_weight,
+                       state->ferries[my_id].max_luggage_weight, type_str);
+            }
+        }
         unlock_mutex();
 
-        printf("%s[FERRY-%d]%s Waiting for passengers... (%d/%d)\n",
-               COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET,
-               current_passengers, FERRY_CAPACITY);
+        printf("%s[FERRY-%d]%s Waiting for gangway to clear...%s\n",
+               C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
 
-        time_t now = time(NULL);
-        if (difftime(now, boarding_start) >= BOARDING_TIME_LIMIT) {
-            printf("%s[FERRY-%d]%s Boarding time expired, departing with %d passengers\n",
-                   C_WARNING, my_pid, COLOR_RESET, current_passengers);
-            break;
+        int gangway_wait = 0;
+        const int MAX_GANGWAY_WAIT = 10;
+
+        while (!ipc_is_gangway_empty() && gangway_wait < MAX_GANGWAY_WAIT) {
+            printf("%s[FERRY-%d]%s Gangway not empty (%d passengers), waiting...%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, ipc_get_gangway_count(), COLOR_RESET);
+            sleep(1);
+            gangway_wait++;
         }
 
-        sleep(1);
+        if (!ipc_is_gangway_empty()) {
+            printf("%s[FERRY-%d]%s WARNING: Departing with passengers still on gangway!%s\n",
+                   C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+        } else {
+            printf("%s[FERRY-%d]%s Gangway clear%s\n",
+                   C_SUCCESS, my_pid, COLOR_RESET, COLOR_RESET);
+        }
 
-        if (force_departure_flag || ipc_check_force_departure()) {
-            lock_mutex();
-            int current_passengers = state->ferries[my_id].num_passengers;
-            unlock_mutex();
+        printf("%s[FERRY-%d] ⛴️  Departing... (Trip #%d)%s\n",
+               COLOR_BRIGHT_GREEN, my_pid, trip_number, COLOR_RESET);
 
-            printf("%s[FERRY-%d]%s SIGUSR1 received - forced departure with %d passengers%s\n",
-                   C_WARNING, my_pid, COLOR_RESET, current_passengers, COLOR_RESET);
-            break;
+        set_ferry_status(my_id, FERRY_SAILING);
+
+        lock_mutex();
+        state->ferries[my_id].last_departure = time(NULL);
+        state->ferries[my_id].trips_completed++;
+        int completed_trips = state->ferries[my_id].trips_completed;
+        unlock_mutex();
+
+        snprintf(log_msg, sizeof(log_msg),
+                 "Ferry #%d departed (trip #%d, %d passengers)",
+                 my_id, completed_trips, num_passengers);
+        log_message(log_msg);
+
+        sleep(FERRY_TRIP_TIME);
+
+        printf("%s[FERRY-%d] ⚓ Returned to port (Trip #%d completed)%s\n",
+               COLOR_BRIGHT_CYAN, my_pid, trip_number, COLOR_RESET);
+
+        set_ferry_status(my_id, FERRY_RETURNING);
+
+        snprintf(log_msg, sizeof(log_msg),
+                 "Ferry #%d returned to port (trip #%d)",
+                 my_id, completed_trips);
+        log_message(log_msg);
+
+        if (!should_exit && state->system_running && !force_departure_flag && !ipc_check_force_departure()) {
+            printf("%s[FERRY-%d]%s Ready for next trip...%s\n",
+                   C_SUCCESS, my_pid, COLOR_RESET, COLOR_RESET);
+            sleep(1);
         }
     }
-
-    lock_mutex();
-    int num_passengers = state->ferries[my_id].num_passengers;
-    printf("%s[FERRY-%d]%s Passenger manifest:%s\n",
-           STYLE_BOLD, my_pid, COLOR_RESET, COLOR_RESET);
-
-    for (int i = 0; i < num_passengers; i++) {
-        int pass_id = state->ferries[my_id].passenger_ids[i];
-        if (pass_id >= 0 && pass_id < MAX_PASSENGERS) {
-            PassengerInfo *p = &state->passengers[pass_id];
-            const char *gender_str = (p->gender == MALE) ? "M" : "F";
-            const char *type_str = (p->type == VIP) ? "VIP" : "REG";
-
-            printf("  - Passenger #%d [%s, %dkg/%dkg, %s]\n",
-         pass_id, gender_str, p->luggage_weight,
-         state->ferries[my_id].max_luggage_weight, type_str);
-        }
-    }
-
-    unlock_mutex();
-
-    printf("%s[FERRY-%d]%s Waiting for gangway to clear...%s\n",
-           C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
-
-    int gangway_wait = 0;
-    const int MAX_GANGWAY_WAIT = 10;
-
-    while (!ipc_is_gangway_empty() && gangway_wait < MAX_GANGWAY_WAIT) {
-        printf("%s[FERRY-%d]%s Gangway not empty (%d passengers), waiting...%s\n",
-               C_WARNING, my_pid, COLOR_RESET, ipc_get_gangway_count(), COLOR_RESET);
-        sleep(1);
-        gangway_wait++;
-    }
-
-    if (!ipc_is_gangway_empty()) {
-        printf("%s[FERRY-%d]%s WARNING: Departing with passengers still on gangway!%s\n",
-               C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
-    } else {
-        printf("%s[FERRY-%d]%s Gangway clear%s\n",
-               C_SUCCESS, my_pid, COLOR_RESET, COLOR_RESET);
-    }
-
-    printf("%s[FERRY-%d] ⛴️  Departing...%s\n",
-           COLOR_BRIGHT_GREEN, my_pid, COLOR_RESET);
-
-    set_ferry_status(my_id, FERRY_SAILING);
-
-    lock_mutex();
-    state->ferries[my_id].last_departure = time(NULL);
-    state->ferries[my_id].trips_completed++;
-    unlock_mutex();
-
-    snprintf(log_msg, sizeof(log_msg),
-             "Ferry #%d departed (trip #%d)",
-             my_id, 1);
-    log_message(log_msg);
-
-    sleep(FERRY_TRIP_TIME);
-
-    printf("%s[FERRY-%d] ⚓ Returned to port%s\n",
-           COLOR_BRIGHT_CYAN, my_pid, COLOR_RESET);
-
-    set_ferry_status(my_id, FERRY_RETURNING);
-    sleep(1);
-
-    snprintf(log_msg, sizeof(log_msg),
-             "Ferry #%d returned to port",
-             my_id);
-    log_message(log_msg);
 
     ipc_unregister_ferry_pid(my_pid);
     unregister_ferry(my_id);
-    printf("%s[FERRY-%d]%s Unregistered\n",
-           STYLE_DIM, my_pid, COLOR_RESET);
+    printf("%s[FERRY-%d]%s Unregistered (completed %d trips)\n",
+           STYLE_DIM, my_pid, COLOR_RESET, trip_number);
 
     if (shmdt(state) == -1) {
         perror("[FERRY] shmdt");
