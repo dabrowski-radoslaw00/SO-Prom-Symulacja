@@ -67,6 +67,7 @@ int ipc_init(void) {
     state->signal1_received = 0;
     state->signal2_received = 0;
     state->boarding_allowed = true;
+    state->all_passengers_finished = false;
 
     sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_CREAT | IPC_EXCL | IPC_PERMS);
 
@@ -949,8 +950,33 @@ bool ipc_check_force_departure(void) {
 void ipc_set_force_departure(bool active) {
     if (state == NULL) return;
 
-
     ipc_lock();
     state->signal1_received = active ? 1 : 0;
     ipc_unlock();
+}
+
+bool ipc_all_passengers_finished(void) {
+    if (state == NULL) return true;
+
+    ipc_lock();
+    bool finished = state->all_passengers_finished;
+    ipc_unlock();
+    return finished;
+}
+
+void ipc_set_all_passengers_finished(bool finished) {
+    if (state == NULL) return;
+
+    ipc_lock();
+    state->all_passengers_finished = finished;
+    ipc_unlock();
+}
+
+int ipc_get_active_ferries_count(void) {
+    if (state == NULL) return 0;
+
+    ipc_lock();
+    int count = state->num_ferry_pids;
+    ipc_unlock();
+    return count;
 }

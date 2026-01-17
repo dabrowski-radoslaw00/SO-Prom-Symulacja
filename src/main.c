@@ -11,22 +11,21 @@
 int main(void) {
     printf("=== Ferry System - Main Launcher ===\n\n");
 
-    printf("Initializing logger...\n");
-    if (logger_init() == -1) {
-        fprintf(stderr, "Failed to initialize logger\n");
-        return EXIT_FAILURE;
-    }
-    log_message("=== SYSTEM STARTUP ===");
-    log_message("Logger initialized");
-
     printf("Initializing IPC...\n");
     if (ipc_init() == -1) {
         fprintf(stderr, "Failed to initialize IPC\n");
-        log_message("ERROR: Failed to initialize IPC");
-        logger_cleanup();
         return EXIT_FAILURE;
     }
-    log_message("IPC initialized (shared memory + semaphores)");
+
+    printf("Initializing logger...\n");
+    if (logger_init() == -1) {
+        fprintf(stderr, "Failed to initialize logger\n");
+        ipc_cleanup();
+        return EXIT_FAILURE;
+    }
+
+    log_message("=== SYSTEM STARTUP ===");
+    log_message("IPC and Logger initialized");
     
     printf("Starting port captain...\n");
     log_message("Forking port captain process");
@@ -130,6 +129,7 @@ int main(void) {
         }
     }
     log_message("All passengers finished");
+    ipc_set_all_passengers_finished(true);
     
     printf("\nWaiting for ferries to finish...\n");
     for (int i = 0; i < NUM_FERRIES; i++) {
@@ -156,15 +156,15 @@ int main(void) {
 
     printf("\nCleaning up...\n");
     log_message("Starting system cleanup");
+    log_message("IPC cleanup starting...");
+    log_message("=== SYSTEM SHUTDOWN ===");
+    
+    logger_detach_semaphore();
 
     if (ipc_cleanup() == -1) {
         fprintf(stderr, "Warning: IPC cleanup had errors\n");
-        log_message("WARNING: IPC cleanup had errors");
-    } else {
-        log_message("IPC cleaned up successfully");
     }
-
-    log_message("=== SYSTEM SHUTDOWN ===");
+    
     logger_cleanup();
 
     printf("\n=== System finished ===\n");

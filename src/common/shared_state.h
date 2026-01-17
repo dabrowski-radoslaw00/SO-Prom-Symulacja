@@ -73,6 +73,7 @@ typedef struct {
     volatile sig_atomic_t signal1_received;
     volatile sig_atomic_t signal2_received;
     bool boarding_allowed;
+    bool all_passengers_finished;
 } SystemState;
 
 

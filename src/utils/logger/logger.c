@@ -96,7 +96,13 @@ void log_message(const char *message) {
     fprintf(stderr, "[%s] %s\n", timestamp, message);
 }
 
+void logger_detach_semaphore(void) {
+    log_sem_id = -1;
+}
+
 void logger_cleanup(void) {
+    log_sem_id = -1;
+    
     if (log_file != NULL) {
         fclose(log_file);
         log_file = NULL;

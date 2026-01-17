@@ -56,4 +56,9 @@ void ipc_set_boarding_allowed(bool allowed);
 bool ipc_check_force_departure(void);
 void ipc_set_force_departure(bool active);
 
+bool ipc_all_passengers_finished(void);
+void ipc_set_all_passengers_finished(bool finished);
+
+int ipc_get_active_ferries_count(void);
+
 #endif

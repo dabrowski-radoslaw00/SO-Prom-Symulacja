@@ -8,6 +8,7 @@
 int logger_init(void);
 
 void log_message(const char *message);
+void logger_detach_semaphore(void);
 void logger_cleanup(void);
 
 

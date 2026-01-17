@@ -7,8 +7,8 @@
 #include <sys/shm.h>
 #include <time.h>
 
-#define CAPTAIN_WORK_TIME 12
-#define SIGNAL2_AFTER 8
+#define CAPTAIN_WORK_TIME 120
+#define SIGNAL2_AFTER 100
 
 int main(void) {
     printf("%s[CAPTAIN]%s Port Captain starting...\n", COLOR_BRIGHT_YELLOW, COLOR_RESET);
@@ -34,6 +34,7 @@ int main(void) {
 
     time_t start_time = time(NULL);
     bool signal2_sent = false;
+    bool early_exit = false;
 
     while (1) {
         sleep(1);
@@ -43,6 +44,14 @@ int main(void) {
 
         printf("%s[CAPTAIN]%s Working... (%d/%d sec)\n",
                COLOR_BRIGHT_YELLOW, COLOR_RESET, elapsed, CAPTAIN_WORK_TIME);
+
+        if (ipc_all_passengers_finished() && ipc_get_active_ferries_count() == 0) {
+            printf("%s[CAPTAIN]%s All passengers and ferries finished - ending shift early%s\n",
+                   COLOR_BRIGHT_GREEN, COLOR_RESET, COLOR_RESET);
+            log_message("Captain ending shift - all operations completed");
+            early_exit = true;
+            break;
+        }
 
         if (!signal2_sent && elapsed >= SIGNAL2_AFTER) {
             printf("%s[CAPTAIN] 📢 Sending SIGUSR2 - Stop accepting new passengers!%s\n",
@@ -60,14 +69,15 @@ int main(void) {
         }
     }
 
-    // Send SIGUSR1 to force remaining ferries to depart
-    printf("%s[CAPTAIN] 📢 Sending SIGUSR1 - Force ferry departure!%s\n",
-           COLOR_BRIGHT_RED, COLOR_RESET);
+    if (!early_exit) {
+        printf("%s[CAPTAIN] 📢 Sending SIGUSR1 - Force ferry departure!%s\n",
+               COLOR_BRIGHT_RED, COLOR_RESET);
 
-    ipc_set_force_departure(true);
-    ipc_send_signal_to_ferries(SIGUSR1);
+        ipc_set_force_departure(true);
+        ipc_send_signal_to_ferries(SIGUSR1);
 
-    log_message("Captain sent SIGUSR1 - force departure");
+        log_message("Captain sent SIGUSR1 - force departure");
+    }
 
     printf("%s[CAPTAIN]%s Port Captain finished\n", COLOR_BRIGHT_YELLOW, COLOR_RESET);
     log_message("Port captain finished");

@@ -224,6 +224,19 @@ int main(void) {
                 break;
             }
 
+            if (ipc_all_passengers_finished()) {
+                lock_mutex();
+                int current_passengers = state->ferries[my_id].num_passengers;
+                unlock_mutex();
+                
+                if (current_passengers == 0) {
+                    printf("%s[FERRY-%d]%s All passengers finished, no more to transport%s\n",
+                           C_INFO, my_pid, COLOR_RESET, COLOR_RESET);
+                    should_exit = true;
+                    break;
+                }
+            }
+
             if (ipc_is_ferry_full(my_id)) {
                 printf("%s[FERRY-%d] ✓ Ferry is FULL (%d/%d passengers)!%s\n",
                        C_SUCCESS, my_pid, FERRY_CAPACITY, FERRY_CAPACITY, COLOR_RESET);

@@ -59,4 +59,11 @@ add_executable(test_security
 
 target_include_directories(test_security PRIVATE ${SRC_DIR})
 
+add_executable(test_logger_sync
+        ${TEST_DIR}/test_logger_sync.c
+        ${COMMON_SOURCES}
+)
+
+target_include_directories(test_logger_sync PRIVATE ${SRC_DIR})
+
 target_include_directories(test_logger PRIVATE ${SRC_DIR})

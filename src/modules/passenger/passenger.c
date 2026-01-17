@@ -60,6 +60,7 @@ int main(void) {
     ipc_register_passenger_pid(my_pid);
 
     int my_id = ipc_register_passenger(my_pid, attr.gender, attr.luggage_weight, attr.type);
+
     if (my_id == -1) {
         printf("%s[PASSENGER-%d]%s ERROR: No space available\n",
                C_ERROR, my_pid, COLOR_RESET);
@@ -123,7 +124,7 @@ int main(void) {
 
     int station_id = -1;
     int assignment_attempts = 0;
-    const int MAX_ASSIGNMENT_ATTEMPTS = 20;
+    const int MAX_ASSIGNMENT_ATTEMPTS = 50;
 
     printf("%s[PASSENGER-%d]%s Waiting for security station assignment...\n",
            C_INFO, my_pid, COLOR_RESET);
@@ -153,7 +154,8 @@ int main(void) {
                 }
                 ipc_unlock();
             } else {
-                if (current_queue_pos < ipc_get_queue_size() - 1) {
+                int queue_size = ipc_get_queue_size();
+                if (current_queue_pos < queue_size - 1 && queue_size > 0) {
                     if (rand() % 3 == 0) {
                         int new_pos = ipc_pass_in_queue(my_id);
                         if (new_pos >= 0) {
@@ -167,7 +169,7 @@ int main(void) {
                 }
             }
 
-            usleep(500000);
+            usleep(300000);
             assignment_attempts++;
         }
     }
@@ -216,9 +218,9 @@ int main(void) {
 
     int ferry_id = -1;
     int attempts = 0;
-    const int MAX_ATTEMPTS = 10;
+    const int MAX_ATTEMPTS = 30;
 
-    const int SEARCH_DELAY = (attr.type == VIP) ? 500000 : 1000000;
+    const int SEARCH_DELAY = (attr.type == VIP) ? 300000 : 500000;
 
     while (ferry_id == -1 && attempts < MAX_ATTEMPTS) {
         if (stop_boarding_flag) {
@@ -233,12 +235,14 @@ int main(void) {
         ferry_id = ipc_find_available_ferry(attr.luggage_weight);
 
         if (ferry_id == -1) {
-            if (attr.type == VIP) {
-                printf("%s[PASSENGER-%d] 👑 VIP waiting for ferry... (attempt %d/%d)%s\n",
-                       C_VIP, my_pid, attempts + 1, MAX_ATTEMPTS, COLOR_RESET);
-            } else {
-                printf("%s[PASSENGER-%d]%s No ferry available, waiting... (attempt %d/%d)\n",
-                       C_WARNING, my_pid, COLOR_RESET, attempts + 1, MAX_ATTEMPTS);
+            if (attempts % 5 == 0) {
+                if (attr.type == VIP) {
+                    printf("%s[PASSENGER-%d] 👑 VIP waiting for ferry... (attempt %d/%d)%s\n",
+                           C_VIP, my_pid, attempts + 1, MAX_ATTEMPTS, COLOR_RESET);
+                } else {
+                    printf("%s[PASSENGER-%d]%s No ferry available, waiting... (attempt %d/%d)\n",
+                           C_WARNING, my_pid, COLOR_RESET, attempts + 1, MAX_ATTEMPTS);
+                }
             }
             usleep(SEARCH_DELAY);
             attempts++;
