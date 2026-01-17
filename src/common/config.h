@@ -11,7 +11,8 @@
 
 /* === SEMAFORY === */
 #define SEM_SHM_MUTEX 0             // Mutex dla dostępu do shared memory
-#define NUM_SEMAPHORES 1            // Na razie tylko jeden semafor
+#define SEM_LOG_MUTEX 1             // Mutex dla dostępu do pliku logu
+#define NUM_SEMAPHORES 2            // Liczba semaforów w zestawie
 
 /* === PRAWA DOSTĘPU === */
 #define IPC_PERMS 0600              // rw------- (minimalne prawa)

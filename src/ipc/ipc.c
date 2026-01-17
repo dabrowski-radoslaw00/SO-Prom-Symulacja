@@ -79,8 +79,19 @@ int ipc_init(void) {
 
     union semun arg;
     arg.val = 1;
+    
+    // Inicjalizacja semafora dla shared memory
     if (semctl(sem_id, SEM_SHM_MUTEX, SETVAL, arg) == -1) {
-        perror("semctl SETVAL");
+        perror("semctl SETVAL SEM_SHM_MUTEX");
+        semctl(sem_id, 0, IPC_RMID);
+        shmdt(state);
+        shmctl(shm_id, IPC_RMID, NULL);
+        return -1;
+    }
+    
+    // Inicjalizacja semafora dla loggera
+    if (semctl(sem_id, SEM_LOG_MUTEX, SETVAL, arg) == -1) {
+        perror("semctl SETVAL SEM_LOG_MUTEX");
         semctl(sem_id, 0, IPC_RMID);
         shmdt(state);
         shmctl(shm_id, IPC_RMID, NULL);

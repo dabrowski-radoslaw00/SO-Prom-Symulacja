@@ -1,15 +1,54 @@
 #include "utils/logger/logger.h"
+#include "common/config.h"
 #include <stdio.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
 #include <unistd.h>
 
 static FILE *log_file = NULL;
+static int log_sem_id = -1;
+
+static void logger_lock(void) {
+    if (log_sem_id == -1) {
+        return;
+    }
+    
+    struct sembuf op;
+    op.sem_num = SEM_LOG_MUTEX;
+    op.sem_op = -1;
+    op.sem_flg = 0;
+    
+    if (semop(log_sem_id, &op, 1) == -1) {
+        perror("[LOGGER] semop lock");
+    }
+}
+
+static void logger_unlock(void) {
+    if (log_sem_id == -1) {
+        return;
+    }
+    
+    struct sembuf op;
+    op.sem_num = SEM_LOG_MUTEX;
+    op.sem_op = 1;
+    op.sem_flg = 0;
+    
+    if (semop(log_sem_id, &op, 1) == -1) {
+        perror("[LOGGER] semop unlock");
+    }
+}
 
 int logger_init(void) {
     char cwd[1024];
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         fprintf(stderr, "Working directory: %s\n", cwd);
+    }
+
+    log_sem_id = semget(SEM_KEY, NUM_SEMAPHORES, IPC_PERMS);
+    if (log_sem_id == -1) {
+        fprintf(stderr, "[LOGGER] Warning: Could not attach to semaphores, logging without sync\n");
     }
 
     struct stat st = {0};
@@ -47,7 +86,12 @@ void log_message(const char *message) {
     timeinfo = localtime(&now);
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", timeinfo);
 
+    logger_lock();
+    
     fprintf(log_file, "[%s] %s\n", timestamp, message);
+    fflush(log_file);
+    
+    logger_unlock();
 
     fprintf(stderr, "[%s] %s\n", timestamp, message);
 }
