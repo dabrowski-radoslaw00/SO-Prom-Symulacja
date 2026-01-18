@@ -341,8 +341,15 @@ int main(void) {
         log_message(log_msg);
 
         if (!should_exit && state->system_running && !force_departure_flag && !ipc_check_force_departure()) {
-            printf("%s[FERRY-%d]%s Ready for next trip...%s\n",
-                   C_SUCCESS, my_pid, COLOR_RESET, COLOR_RESET);
+            int new_max_luggage = 20 + (rand() % 11);
+            
+            lock_mutex();
+            state->ferries[my_id].max_luggage_weight = new_max_luggage;
+            unlock_mutex();
+            
+            printf("%s[FERRY-%d]%s Ready for next trip [NEW max luggage: %s%dkg%s]...%s\n",
+                   C_SUCCESS, my_pid, COLOR_RESET,
+                   COLOR_YELLOW, new_max_luggage, COLOR_RESET, COLOR_RESET);
             sleep(1);
         }
     }

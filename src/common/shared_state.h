@@ -7,7 +7,7 @@
 #include <time.h>
 #include <signal.h>
 
-#define MAX_PASSENGERS 10
+#define MAX_PASSENGERS 100
 #define MAX_SECURITY_QUEUE 50
 #define MAX_FERRY_PIDS 10
 #define MAX_PASSENGER_PIDS 100

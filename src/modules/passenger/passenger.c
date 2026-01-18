@@ -133,6 +133,7 @@ int main(void) {
         if (stop_boarding_flag) {
             printf("%s[PASSENGER-%d]%s SIGUSR2 received - leaving queue%s\n",
                    C_WARNING, my_pid, COLOR_RESET, COLOR_RESET);
+            ipc_leave_security_queue(my_id);
             ipc_unregister_passenger(my_id);
             ipc_unregister_passenger_pid(my_pid);
             logger_cleanup();
@@ -177,6 +178,7 @@ int main(void) {
     if (station_id < 0) {
         printf("%s[PASSENGER-%d]%s ERROR: Failed to get security station assignment\n",
                C_ERROR, my_pid, COLOR_RESET);
+        ipc_leave_security_queue(my_id);
         ipc_unregister_passenger(my_id);
         ipc_unregister_passenger_pid(my_pid);
         logger_cleanup();
